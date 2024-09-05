@@ -1,9 +1,14 @@
+use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::Sender;
 use reqwest_eventsource::{Event, EventSource};
 use log::{debug, info};
+use rand_distr::Distribution;
 use tokenizers::Tokenizer;
 use tokio::fs;
+use futures_util::StreamExt;
 
+#[derive(Debug, Clone)]
 pub(crate) struct TextGenerationRequest {
     pub prompt: String,
     pub max_tokens: u32,
@@ -20,41 +25,52 @@ pub(crate) enum TextGenerationResponseType {
 }
 
 trait TextGenerationBackend {
-    async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>) -> String;
+    async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>);
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct OpenAITextGenerationBackend {
     pub(crate) api_key: String,
     pub(crate) base_url: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub(crate) struct OpenAITextGenerationMessage {
     pub(crate) content: String,
     pub(crate) role: String,
 }
 
+#[derive(serde::Deserialize, Clone)]
 pub(crate) struct OpenAITextGenerationDelta {
     pub(crate) content: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub(crate) struct OpenAITextGenerationChoice {
     pub(crate) message: Option<OpenAITextGenerationMessage>,
     pub(crate) finish_reason: String,
     pub(crate) delta: Option<OpenAITextGenerationDelta>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub(crate) struct OpenAITextGenerationResponse {
     pub(crate) choices: Vec<OpenAITextGenerationChoice>,
 }
 
+impl OpenAITextGenerationBackend {
+    pub(crate) fn new(api_key: String, base_url: String) -> Self {
+        Self {
+            api_key,
+            base_url,
+        }
+    }
+}
+
 impl TextGenerationBackend for OpenAITextGenerationBackend {
     async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>) {
-        let url = format!("{base_url}/v1", base_url = self.base_url).as_str();
+        let url = format!("{base_url}/v1", base_url = self.base_url);
         debug!("Requesting {url} with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens);
-        let mut es = EventSource::get(url).unwrap();
+        let mut es = EventSource::get(url);
         while let Some(event) = es.next().await {
             match event {
                 Ok(Event::Open) => info!("Connection opened"),
@@ -63,11 +79,11 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     let oai_response: OpenAITextGenerationResponse = serde_json::from_str(&message.data).unwrap();
                     let choices = oai_response.choices;
                     let mut response: TextGenerationResponse;
-                    match Some(choices[0].clone().message) {
+                    match choices[0].clone().message {
                         None => {
                             response = TextGenerationResponse {
                                 response_type: TextGenerationResponseType::Chunk,
-                                text: oai_response.choices[0].clone().delta.unwrap().content,
+                                text: choices[0].clone().delta.unwrap().content,
                             };
                         }
                         Some(message) => {
@@ -80,7 +96,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     sender.send(response).unwrap();
                 }
                 Err(e) => {
-                    es.close()
+                    es.close();
                 }
             }
             debug!("Generated text using OpenAI API with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens)
@@ -88,14 +104,15 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
     }
 }
 
-trait TextRequestGenerator {
-    fn generate_request(&self, max_tokens: u32) -> TextGenerationRequest;
+pub(crate) trait TextRequestGenerator {
+    fn generate_request(&mut self) -> TextGenerationRequest;
 }
 
 pub(crate) struct ShareGPTTextRequestGenerator {
     pub(crate) filepath: String,
     pub conversations: Vec<ShareGPTEntry>,
-    pub current_index: u64,
+    pub requests: Vec<TextGenerationRequest>,
+    current_index: AtomicI64,
 }
 
 #[derive(serde::Deserialize)]
@@ -111,68 +128,87 @@ pub(crate) struct ShareGPTEntry {
 }
 
 impl ShareGPTTextRequestGenerator {
-    fn new(filepath: String, tokenizer: String, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
-        let tokenizer = Tokenizer::from_pretrained(tokenizer, None)?;
+    pub(crate) fn new(filepath: String, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
+        let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
         // load json file
         let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
         let data: Vec<ShareGPTEntry> = serde_json::from_str(&input).expect("Unable to parse input file");
         // generate requests
         let mut requests = Vec::new();
+        info!("Generating requests from {filepath}", filepath = filepath);
         for entry in data.iter() {
+            if entry.conversations.len() == 0 {
+                continue;
+            }
             let prompt = entry.conversations[0].value.clone();
+            // compute number of tokens to generate using a Gaussian distribution
+            let normal = rand_distr::Normal::new(prompt_tokens as f64, variance as f64).unwrap();
+            let mut num_tokens = normal.sample(&mut rand::thread_rng()) as u32;
+            if num_tokens < min_tokens {
+                num_tokens = min_tokens;
+            }
+            if num_tokens > max_tokens {
+                num_tokens = max_tokens;
+            }
+            let sampled_prompt = match tokenize_prompt(prompt, tokenizer.clone(), num_tokens) {
+                Ok(prompt) => prompt,
+                Err(e) => {
+                    debug!("Error tokenizing prompt: {e}");
+                    continue;
+                }
+            };
             requests.push(TextGenerationRequest {
-                prompt,
+                prompt: sampled_prompt,
                 max_tokens,
             });
+            // TODO: check that we have enough requests
         }
+        info!("Generated {num_requests} requests", num_requests = requests.len());
         Self {
-            filepath,
             conversations: data,
-            current_index: 0,
-        }
-    }
-
-    fn generate_inputs(&self, min_tokens: u32, max_tokens: u32, variance: u32) -> Vec<TextGenerationRequest> {
-        let mut requests = Vec::new();
-        for entry in self.conversations.iter() {
-            let prompt = entry.conversations[0].value.clone();
-            requests.push(TextGenerationRequest {
-                prompt,
-                max_tokens,
-            });
-        }
-        requests
-    }
-}
-
-impl Iterator for ShareGPTTextRequestGenerator {
-    type Item = TextGenerationRequest;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index < self.conversations.len() as u64 {
-            let entry = self.conversations[self.current_index].clone();
-            self.current_index += 1;
-            let prompt = entry.conversations[0].value.clone();
-            let max_tokens = 50;
-            Some(entry)
-        } else {
-            None
+            current_index: AtomicI64::new(0),
+            filepath,
+            requests,
         }
     }
 }
 
-fn tokenize_prompt(prompt: String, tokenizer: Tokenizer, num_tokens: u32) -> anyhow::Result<String> {
+impl TextRequestGenerator for ShareGPTTextRequestGenerator {
+    fn generate_request(&mut self) -> TextGenerationRequest {
+        let idx = self.current_index.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if idx >= (self.requests.len() - 1) as i64 {
+            self.current_index.store(0, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.requests[idx as usize].clone()
+    }
+}
+
+
+fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: u32) -> anyhow::Result<String> {
+    let prompt_tokens=tokenizer.encode(prompt.clone(), false).map_err(|_| anyhow::anyhow!("Error tokenizing prompt"))?;
+    if prompt_tokens.len() < num_tokens as usize {
+        return Err(anyhow::anyhow!("Prompt is too short to tokenize"));
+    }
     // let's do a binary search to find the right number of tokens
-    let mut low = 0;
+    let mut low = 1;
     let mut high = prompt.len() as u32;
+    let mut prompt_sub = String::new();
     while low < high {
         let mid = (low + high) / 2;
-        let tokenized = tokenizer.encode(prompt[low..high], false)?;
-        if tokenized.len() > num_tokens as usize {
+        prompt_sub = prompt.chars().skip((low - 1) as usize).take(high as usize).collect::<String>();
+        let tokenized_len = match tokenizer.encode(prompt_sub.clone(), false) {
+            Ok(tokens) => tokens.len(),
+            Err(_) => {
+                return Err(anyhow::anyhow!("Error tokenizing prompt"));
+            }
+        };
+        if tokenized_len == num_tokens as usize {
+            return Ok(prompt_sub.to_string());
+        } else if tokenized_len > num_tokens as usize {
             high = mid;
         } else {
             low = mid + 1;
         }
     }
-    prompt[0..low].to_string()
+    Ok(prompt_sub.to_string())
 }
