@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
 use tokio::sync::mpsc::Sender;
 use reqwest_eventsource::{Event, EventSource};
-use log::{debug, info};
+use log::{debug, info, trace};
 use rand_distr::Distribution;
 use tokenizers::Tokenizer;
 use tokio::fs;
@@ -132,7 +132,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                                 response_type: TextGenerationResponseType::Final,
                                 text: message.content,
                             };
-                            debug!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens}, response: {message}", prompt = request.prompt, max_tokens = request.max_tokens,message = &response.text);
+                            trace!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens}, response: {message}", prompt = request.prompt, max_tokens = request.max_tokens,message = &response.text);
                         }
                     };
                     sender.send(response).await.unwrap();
@@ -149,20 +149,21 @@ pub(crate) trait TextRequestGenerator {
     fn generate_request(&mut self) -> TextGenerationRequest;
 }
 
+#[derive(Clone)]
 pub(crate) struct ShareGPTTextRequestGenerator {
     pub(crate) filepath: String,
     pub conversations: Vec<ShareGPTEntry>,
     pub requests: Vec<TextGenerationRequest>,
-    current_index: AtomicI64,
+    current_index: Arc<AtomicI64>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize,Clone)]
 pub(crate) struct ShareGPTConversation {
     pub(crate) from: String,
     pub(crate) value: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize,Clone)]
 pub(crate) struct ShareGPTEntry {
     pub(crate) id: String,
     pub(crate) conversations: Vec<ShareGPTConversation>,
@@ -207,7 +208,7 @@ impl ShareGPTTextRequestGenerator {
         info!("Generated {num_requests} requests", num_requests = requests.len());
         Self {
             conversations: data,
-            current_index: AtomicI64::new(0),
+            current_index: Arc::from(AtomicI64::new(0)),
             filepath,
             requests,
         }
