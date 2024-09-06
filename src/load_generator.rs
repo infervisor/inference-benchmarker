@@ -40,7 +40,8 @@ impl Executor for ThroughputExecutor {
         let active_vus = Arc::new(AtomicI64::new(0));
         // start all VUs
         for _ in 0..self.config.max_vus {
-            start_vu(self.backend.clone(), requests.generate_request(), tx.clone()).await;
+            let request= Arc::from(requests.generate_request());
+            start_vu(self.backend.clone(), request, tx.clone()).await;
             active_vus.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         // replenish VUs as they finish
@@ -49,12 +50,13 @@ impl Executor for ThroughputExecutor {
             if start.elapsed() > self.config.duration {
                 break;
             }
-            start_vu(self.backend.clone(), requests.generate_request(), tx.clone()).await;
+            let request= Arc::from(requests.generate_request());
+            start_vu(self.backend.clone(), request, tx.clone()).await;
         }
     }
 }
 
-async fn start_vu(backend: Box<dyn TextGenerationBackend+Send+Sync>, request: TextGenerationRequest, stop_ch: Sender<bool>) -> JoinHandle<bool> {
+async fn start_vu(backend: Box<dyn TextGenerationBackend+Send+Sync>, request: Arc<TextGenerationRequest>, stop_ch: Sender<bool>) -> JoinHandle<bool> {
     tokio::spawn(async move {
         let (tx, mut rx):(Sender<TextGenerationResponse>,Receiver<TextGenerationResponse>) = tokio::sync::mpsc::channel(1);
         debug!("VU started with request: {:?}", request);

@@ -29,7 +29,7 @@ pub(crate) enum TextGenerationResponseType {
 
 #[async_trait]
 pub(crate) trait TextGenerationBackend:TextGenerationBackendClone {
-    async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>);
+    async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationResponse>);
 }
 
 pub trait TextGenerationBackendClone{
@@ -69,7 +69,7 @@ pub(crate) struct OpenAITextGenerationDelta {
 #[derive(serde::Deserialize, Clone)]
 pub(crate) struct OpenAITextGenerationChoice {
     pub(crate) message: Option<OpenAITextGenerationMessage>,
-    pub(crate) finish_reason: String,
+    pub(crate) finish_reason: Option<String>,
     pub(crate) delta: Option<OpenAITextGenerationDelta>,
 }
 
@@ -89,15 +89,34 @@ impl OpenAITextGenerationBackend {
 
 #[async_trait]
 impl TextGenerationBackend for OpenAITextGenerationBackend {
-    async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>) {
-        let url = format!("{base_url}/v1", base_url = self.base_url);
+    async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationResponse>) {
+        let url = format!("{base_url}/v1/chat/completions", base_url = self.base_url);
         debug!("Requesting {url} with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens);
-        let mut es = EventSource::get(url);
+        let req=reqwest::Client::new().post(url)
+            .header("Authorization", format!("Bearer {token}", token = self.api_key))
+            .json(&serde_json::json!({
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant."
+                    },
+                    {
+                        "role": "user",
+                        "content": request.prompt
+                    }
+                ],
+                "max_tokens": request.max_tokens,
+                "temperature": 0.7,
+                "stop": ["\n"],
+                "stream": true,
+            }));
+        let mut es = EventSource::new(req).unwrap();
         while let Some(event) = es.next().await {
             match event {
                 Ok(Event::Open) => info!("Connection opened"),
                 Ok(Event::Message(message)) => {
-                    // deserialize message data
+                    // deserialize message data FIXME: handle JSON errors
                     let oai_response: OpenAITextGenerationResponse = serde_json::from_str(&message.data).unwrap();
                     let choices = oai_response.choices;
                     let mut response: TextGenerationResponse;
@@ -113,6 +132,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                                 response_type: TextGenerationResponseType::Final,
                                 text: message.content,
                             };
+                            debug!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens}, response: {message}", prompt = request.prompt, max_tokens = request.max_tokens,message = &response.text);
                         }
                     };
                     sender.send(response).await.unwrap();
@@ -121,7 +141,6 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     es.close();
                 }
             }
-            debug!("Generated text using OpenAI API with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens)
         }
     }
 }
