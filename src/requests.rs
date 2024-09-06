@@ -1,6 +1,7 @@
+use async_trait::async_trait;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
-use std::sync::mpsc::Sender;
+use tokio::sync::mpsc::Sender;
 use reqwest_eventsource::{Event, EventSource};
 use log::{debug, info};
 use rand_distr::Distribution;
@@ -14,18 +15,38 @@ pub(crate) struct TextGenerationRequest {
     pub max_tokens: u32,
 }
 
+#[derive(Debug)]
 pub(crate) struct TextGenerationResponse {
     pub text: String,
     pub response_type: TextGenerationResponseType,
 }
 
+#[derive(Debug)]
 pub(crate) enum TextGenerationResponseType {
     Chunk,
     Final,
 }
 
-trait TextGenerationBackend {
+#[async_trait]
+pub(crate) trait TextGenerationBackend:TextGenerationBackendClone {
     async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>);
+}
+
+pub trait TextGenerationBackendClone{
+    fn clone_box(&self) -> Box<dyn TextGenerationBackend+Send+Sync>;
+}
+
+impl<T> TextGenerationBackendClone for T
+where T: 'static + TextGenerationBackend + Clone + Send + Sync {
+    fn clone_box(&self) -> Box<dyn TextGenerationBackend+Send+Sync> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn TextGenerationBackend+Send+Sync> {
+    fn clone(&self) -> Box<dyn TextGenerationBackend+Send+Sync> {
+        self.clone_box()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +87,7 @@ impl OpenAITextGenerationBackend {
     }
 }
 
+#[async_trait]
 impl TextGenerationBackend for OpenAITextGenerationBackend {
     async fn generate(&self, request: TextGenerationRequest, sender: Sender<TextGenerationResponse>) {
         let url = format!("{base_url}/v1", base_url = self.base_url);
@@ -93,7 +115,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             };
                         }
                     };
-                    sender.send(response).unwrap();
+                    sender.send(response).await.unwrap();
                 }
                 Err(e) => {
                     es.close();

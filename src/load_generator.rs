@@ -4,7 +4,7 @@ use std::time::Duration;
 use log::debug;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use crate::requests::TextGenerationRequest;
+use crate::requests::{TextGenerationBackend, TextGenerationRequest, TextGenerationResponse};
 
 pub(crate) struct ExecutorConfig {
     pub(crate) max_vus: u32,
@@ -17,15 +17,17 @@ pub trait Executor {
 
 pub(crate) struct ThroughputExecutor {
     config: ExecutorConfig,
+    backend: Box<dyn TextGenerationBackend+Send+Sync>,
 }
 
 impl ThroughputExecutor {
-    pub(crate) fn new(max_vus: u32, duration: Duration) -> Self {
+    pub(crate) fn new(backend: Box<dyn TextGenerationBackend+Send+Sync>, max_vus: u32, duration: Duration) -> ThroughputExecutor {
         Self {
+            backend,
             config: ExecutorConfig {
                 max_vus,
                 duration,
-            }
+            },
         }
     }
 }
@@ -38,7 +40,7 @@ impl Executor for ThroughputExecutor {
         let active_vus = Arc::new(AtomicI64::new(0));
         // start all VUs
         for _ in 0..self.config.max_vus {
-            start_vu(requests.generate_request().clone(), tx.clone()).await;
+            start_vu(self.backend.clone(), requests.generate_request(), tx.clone()).await;
             active_vus.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         // replenish VUs as they finish
@@ -47,19 +49,27 @@ impl Executor for ThroughputExecutor {
             if start.elapsed() > self.config.duration {
                 break;
             }
-            start_vu(requests.generate_request().clone(), tx.clone()).await;
+            start_vu(self.backend.clone(), requests.generate_request(), tx.clone()).await;
         }
     }
 }
 
-async fn start_vu(request: TextGenerationRequest, stop_ch: Sender<bool>) -> JoinHandle<bool> {
+async fn start_vu(backend: Box<dyn TextGenerationBackend+Send+Sync>, request: TextGenerationRequest, stop_ch: Sender<bool>) -> JoinHandle<bool> {
     tokio::spawn(async move {
-        // do the VU work here
+        let (tx, mut rx):(Sender<TextGenerationResponse>,Receiver<TextGenerationResponse>) = tokio::sync::mpsc::channel(1);
         debug!("VU started with request: {:?}", request);
+        let req_thread=tokio::spawn(async move {
+            backend.generate(request.clone(), tx).await;
+        });
+        for response in rx.recv().await {
+            debug!("Received response: {:?}", response);
+        }
+        // do the VU work here
         // random sleep to simulate work
         tokio::time::sleep(Duration::from_secs(1)).await;
         // signal that the VU work is done
         stop_ch.send(true).await.unwrap();
+        req_thread.await.unwrap();
         return true;
     })
 }
