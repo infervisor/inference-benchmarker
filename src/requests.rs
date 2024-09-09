@@ -92,7 +92,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
     async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationAggregatedResponse>) {
         let url = format!("{base_url}/v1/chat/completions", base_url = self.base_url);
         let mut aggregated_response = TextGenerationAggregatedResponse::new();
-        debug!("Requesting {url} with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens);
+        //debug!("Requesting {url} with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens);
         let req = reqwest::Client::new().post(url)
             .header("Authorization", format!("Bearer {token}", token = self.api_key))
             .json(&serde_json::json!({
@@ -150,7 +150,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 }
             };
         };
-        debug!("Final response: {response}", response = final_response);
+        //debug!("Final response: {response}", response = final_response);
     }
 }
 

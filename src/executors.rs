@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::time::Duration;
 use async_trait::async_trait;
 use futures_util::FutureExt;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -13,7 +13,7 @@ use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, T
 pub(crate) struct ExecutorConfig {
     pub(crate) max_vus: u64,
     pub(crate) duration: Duration,
-    pub(crate) rate: Option<u64>,
+    pub(crate) rate: Option<f64>,
 }
 
 #[async_trait]
@@ -55,13 +55,18 @@ impl Executor for ThroughputExecutor {
         }
         // replenish VUs as they finish
         while let Some(_) = end_rx.recv().await {
-            // NOTE: as we maintain a constant number of VUs we don't need to update the active_vus counter
+            active_vus.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             if start.elapsed() > self.config.duration {
-                break;
+                info!("Duration reached, waiting for all VUs to finish...");
+                if active_vus.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                    break;
+                }
+            } else {
+                let mut requests_guard = requests.lock().await;
+                let request = Arc::from(requests_guard.generate_request());
+                active_vus.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                start_vu(self.backend.clone(), request, responses_tx.clone(), end_tx.clone()).await;
             }
-            let mut requests_guard = requests.lock().await;
-            let request = Arc::from(requests_guard.generate_request());
-            start_vu(self.backend.clone(), request, responses_tx.clone(), end_tx.clone()).await;
         }
     }
 }
@@ -75,13 +80,15 @@ async fn start_vu(backend: Box<dyn TextGenerationBackend + Send + Sync>, request
         });
         let send_thread = tokio::spawn(async move {
             while let Some(response) = rx.recv().await {
-                responses_tx.send(response).expect("Could not send response to channel.");
+                // ignore errors, if the receiver is gone we want to finish the request
+                // to leave remote server in clean state
+                let _ = responses_tx.send(response);
             }
         });
         req_thread.await.unwrap();
         send_thread.await.unwrap();
         // signal that the VU work is done
-        end_tx.send(true).await.unwrap();
+        end_tx.send(true).await.expect("Could not send end signal to channel.");
         return true;
     })
 }
@@ -92,7 +99,7 @@ pub(crate) struct ConstantArrivalRateExecutor {
 }
 
 impl ConstantArrivalRateExecutor {
-    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration, rate: u64) -> ConstantArrivalRateExecutor {
+    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration, rate: f64) -> ConstantArrivalRateExecutor {
         Self {
             backend,
             config: ExecutorConfig {
@@ -112,16 +119,27 @@ impl Executor for ConstantArrivalRateExecutor {
         // channel to handle ending VUs
         let (end_tx, mut end_rx): (Sender<bool>, Receiver<bool>) = tokio::sync::mpsc::channel(self.config.max_vus as usize);
         let rate = self.config.rate.expect("checked in new()");
-        // spawn `rate` new VUs every second, until the duration is reached
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        // spawn new VUs every `tick_ms` to reach the expected `rate` per second, until the duration is reached
+        let tick_ms = 10;
+        let mut interval = tokio::time::interval(Duration::from_millis(tick_ms));
+
         let backend = self.backend.clone();
-        let duration= self.config.duration;
+        let duration = self.config.duration;
         let max_vus = self.config.max_vus;
         let active_vus_thread = active_vus.clone();
         let vu_thread = tokio::spawn(async move {
+            let mut spawn_queue = rate.max(1.0); // start with at least one VU
             while start.elapsed() < duration {
-                interval.tick().await;
-                for _ in 0..rate {
+                // delay spawning if we can't spawn a full VU yet
+                if spawn_queue < 1.0 {
+                    spawn_queue += rate * (tick_ms as f64) / 1000.0;
+                    interval.tick().await;
+                    continue;
+                }
+                // spawn VUs, keep track of the fraction of VU to spawn for the next iteration
+                let to_spawn = spawn_queue.floor() as u64;
+                spawn_queue -= to_spawn as f64;
+                for _ in 0..to_spawn {
                     if active_vus_thread.load(std::sync::atomic::Ordering::SeqCst) < max_vus.clone() as i64 {
                         let mut requests_guard = requests.lock().await;
                         let request = Arc::from(requests_guard.generate_request());
@@ -132,12 +150,18 @@ impl Executor for ConstantArrivalRateExecutor {
                         break;
                     }
                 }
+                interval.tick().await;
             }
+            drop(responses_tx); // drop response sender to signal VUs to stop
         });
         while let Some(_) = end_rx.recv().await {
             active_vus.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            // wait for all VUs to finish
             if start.elapsed() > self.config.duration {
-                break;
+                info!("Duration reached, waiting for all VUs to finish...");
+                if active_vus.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                    break;
+                }
             }
         }
         // wait for the VU thread to finish

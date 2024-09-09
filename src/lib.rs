@@ -19,7 +19,7 @@ pub async fn run() {
     info!("Starting benchmark");
     let filepath = "data.json".to_string();
     let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
-    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, "gpt2".to_string(), 50, 10, 100, 10);
+    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, "gpt2".to_string(), 50, 10, 10, 10);
 
     // // Throughput executor
     // let scheduler = scheduler::Scheduler::new(Box::new(backend), scheduler::ExecutorType::Throughput, executors::ExecutorConfig {
