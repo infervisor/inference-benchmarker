@@ -8,6 +8,7 @@ use crate::benchmark::{BenchmarkReportWriter, BenchmarkResultsWriter};
 use crate::executors::Executor;
 use crate::requests::{OpenAITextGenerationBackend, TextGenerationAggregatedResponse, TextGenerationRequest, TextGenerationResponse};
 pub use crate::benchmark::{BenchmarkKind, BenchmarkConfig};
+pub use crate::app::run_console;
 
 mod requests;
 mod executors;
@@ -15,6 +16,7 @@ mod tokens;
 mod scheduler;
 mod results;
 mod benchmark;
+mod app;
 
 pub async fn run(url: String,
                  tokenizer_name: String,

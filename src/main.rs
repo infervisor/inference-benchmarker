@@ -1,3 +1,4 @@
+use text_generation_inference_benchmark::run_console;
 use std::string::ParseError;
 use std::time::Duration;
 use clap::{Error, Parser};
@@ -32,6 +33,8 @@ struct Args {
     #[clap(default_value = "http://localhost:8000", short, long, env)]
     #[arg(value_parser = parse_url)]
     url: String,
+    #[clap(default_value = "console", short, long, env)]
+    output: String,
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
 }
@@ -52,5 +55,6 @@ async fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    run(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration).await;
+    // run(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration).await;
+    run_console(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration);
 }
