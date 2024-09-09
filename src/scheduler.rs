@@ -2,10 +2,10 @@ use std::sync::Arc;
 use log::{info, trace, warn};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use crate::executors::{Executor, ExecutorConfig, ThroughputExecutor};
+use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ThroughputExecutor};
 use crate::requests;
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
-use crate::results::BenchmarkResult;
+use crate::results::BenchmarkResults;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
@@ -18,6 +18,7 @@ pub(crate) struct Scheduler {
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
     executor: Arc<dyn Executor>,
     requests_generator: Arc<Mutex<dyn TextRequestGenerator + Send>>,
+    pub(crate) results: Arc<Mutex<BenchmarkResults>>,
 }
 
 impl Scheduler {
@@ -27,23 +28,33 @@ impl Scheduler {
                 return Scheduler {
                     backend: backend.clone(),
                     executor: Arc::new(ThroughputExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone())),
-                    requests_generator: requests_generator,
+                    results: Arc::from(Mutex::from(BenchmarkResults::new())),
+                    requests_generator,
                 };
             }
             ExecutorType::ConstantArrivalRate => {
-                unimplemented!()
+                if config.rate.is_none() {
+                    panic!("Rate must be specified for ConstantArrivalRateExecutor");
+                }
+                let rate = config.rate.unwrap();
+                return Scheduler {
+                    backend: backend.clone(),
+                    executor: Arc::new(ConstantArrivalRateExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone(), rate)),
+                    results: Arc::from(Mutex::from(BenchmarkResults::new())),
+                    requests_generator,
+                };
             }
         }
     }
 
     pub(crate) async fn run(&self) {
-        let mut bench_result = Arc::from(Mutex::from(BenchmarkResult::new()));
+        // add responses to the benchmark result as they arrive
         let (tx, rx): (UnboundedSender<TextGenerationAggregatedResponse>, UnboundedReceiver<TextGenerationAggregatedResponse>) = tokio::sync::mpsc::unbounded_channel();
         let rx = UnboundedReceiverStream::new(rx);
-        let b= bench_result.clone();
+        let results = self.results.clone();
         tokio::spawn(async move {
             rx.for_each(|response| {
-                let result = bench_result.clone();
+                let result = results.clone();
                 async move {
                     trace!("Received response: {:?}", response);
                     result.lock().await.add_response(response);
@@ -51,6 +62,10 @@ impl Scheduler {
             }).await;
         });
         self.executor.run(self.requests_generator.clone(), tx).await;
-        warn!("{:?}", b);
+        warn!("{:?}", self.results.clone());
+    }
+
+    pub(crate) fn get_results(&self) -> Arc<Mutex<BenchmarkResults>> {
+        self.results.clone()
     }
 }
