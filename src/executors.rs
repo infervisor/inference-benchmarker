@@ -23,13 +23,13 @@ pub(crate) trait Executor {
     async fn run(&self, requests: Arc<Mutex<dyn crate::requests::TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>);
 }
 
-pub(crate) struct ThroughputExecutor {
+pub(crate) struct ConstantVUsExecutor {
     config: ExecutorConfig,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
 }
 
-impl ThroughputExecutor {
-    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration) -> ThroughputExecutor {
+impl ConstantVUsExecutor {
+    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration) -> ConstantVUsExecutor {
         Self {
             backend,
             config: ExecutorConfig {
@@ -42,7 +42,7 @@ impl ThroughputExecutor {
 }
 
 #[async_trait]
-impl Executor for ThroughputExecutor {
+impl Executor for ConstantVUsExecutor {
     async fn run(&self, mut requests: Arc<Mutex<dyn crate::requests::TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>) {
         let start = std::time::Instant::now();
         // channel to handle ending VUs

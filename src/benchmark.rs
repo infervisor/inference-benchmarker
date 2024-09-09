@@ -10,8 +10,8 @@ use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
 use crate::scheduler::ExecutorType;
 
-#[derive(Clone)]
-pub(crate) enum BenchmarkKind {
+#[derive(Clone,Debug)]
+pub enum BenchmarkKind {
     Throughput,
     Sweep,
     Optimum,
@@ -28,11 +28,12 @@ pub(crate) struct Benchmark {
 }
 
 #[derive(Clone)]
-pub(crate) struct BenchmarkConfig {
-    pub(crate) max_vus: u64,
-    pub(crate) duration: Duration,
-    pub(crate) benchmark_kind: BenchmarkKind,
-    pub(crate) prewarm_duration: Duration,
+pub struct BenchmarkConfig {
+    pub max_vus: u64,
+    pub duration: Duration,
+    pub benchmark_kind: BenchmarkKind,
+    pub prewarm_duration: Duration,
+    pub rate: Option<f64>,
 }
 
 impl Benchmark {
@@ -54,6 +55,7 @@ impl Benchmark {
 
     pub(crate) async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
         self.start_time = Some(std::time::Instant::now());
+        info!("Prewarming backend");
         self.prewarm().await?;
         info!("Prewarm complete");
         match self.config.benchmark_kind {
@@ -79,8 +81,7 @@ impl Benchmark {
     }
 
     pub(crate) async fn prewarm(&mut self) -> anyhow::Result<()> {
-        info!("Prewarming backend");
-        let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantVUs, executors::ExecutorConfig {
+        let scheduler = scheduler::Scheduler::new(self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
             duration: self.config.prewarm_duration,
             rate: None,
@@ -91,7 +92,7 @@ impl Benchmark {
 
     pub(crate) async fn run_throughput(&mut self) -> anyhow::Result<()> {
         info!("Running throughput benchmark");
-        let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantVUs, executors::ExecutorConfig {
+        let scheduler = scheduler::Scheduler::new(self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
             duration: self.config.duration,
             rate: None,

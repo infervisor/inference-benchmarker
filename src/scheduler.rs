@@ -2,7 +2,7 @@ use std::sync::Arc;
 use log::{info, trace, warn};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ThroughputExecutor};
+use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
 use crate::requests;
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
 use crate::results::BenchmarkResults;
@@ -28,7 +28,7 @@ impl Scheduler {
             ExecutorType::ConstantVUs => {
                 return Scheduler {
                     backend: backend.clone(),
-                    executor: Arc::new(ThroughputExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone())),
+                    executor: Arc::new(ConstantVUsExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone())),
                     results: Arc::from(Mutex::from(BenchmarkResults::new(ExecutorType::ConstantVUs, config))),
                     requests_generator,
                 };
