@@ -5,11 +5,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures_util::FutureExt;
 use log::{debug, info, warn};
+use serde::Serialize;
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextGenerationRequest, TextGenerationResponse, TextRequestGenerator};
 
+#[derive(Clone,Serialize)]
 pub(crate) struct ExecutorConfig {
     pub(crate) max_vus: u64,
     pub(crate) duration: Duration,

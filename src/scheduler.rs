@@ -9,6 +9,7 @@ use crate::results::BenchmarkResults;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
+#[derive(Clone,strum_macros::Display)]
 pub(crate) enum ExecutorType {
     Throughput,
     ConstantArrivalRate,
@@ -28,7 +29,7 @@ impl Scheduler {
                 return Scheduler {
                     backend: backend.clone(),
                     executor: Arc::new(ThroughputExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone())),
-                    results: Arc::from(Mutex::from(BenchmarkResults::new())),
+                    results: Arc::from(Mutex::from(BenchmarkResults::new(ExecutorType::Throughput, config))),
                     requests_generator,
                 };
             }
@@ -40,7 +41,7 @@ impl Scheduler {
                 return Scheduler {
                     backend: backend.clone(),
                     executor: Arc::new(ConstantArrivalRateExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone(), rate)),
-                    results: Arc::from(Mutex::from(BenchmarkResults::new())),
+                    results: Arc::from(Mutex::from(BenchmarkResults::new(ExecutorType::ConstantArrivalRate, config))),
                     requests_generator,
                 };
             }

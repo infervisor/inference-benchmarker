@@ -1,15 +1,23 @@
 use std::fmt::{Debug, Formatter};
+use serde::Serialize;
+use crate::executors::ExecutorConfig;
 use crate::requests::TextGenerationAggregatedResponse;
+use crate::scheduler::ExecutorType;
+
 
 #[derive(Clone)]
 pub(crate) struct BenchmarkResults {
     aggregated_responses: Vec<TextGenerationAggregatedResponse>,
+    executor_type: ExecutorType,
+    executor_config: ExecutorConfig,
 }
 
 impl BenchmarkResults {
-    pub(crate) fn new() -> BenchmarkResults {
+    pub(crate) fn new(executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
         BenchmarkResults {
             aggregated_responses: Vec::new(),
+            executor_type,
+            executor_config,
         }
     }
 
@@ -72,7 +80,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn average_time_to_first_token(&self) -> anyhow::Result<std::time::Duration> {
+    pub(crate) fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut total_time = std::time::Duration::new(0, 0);
             for response in self.get_successful_responses() {
@@ -84,7 +92,18 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn average_inter_token_latency(&self) -> anyhow::Result<std::time::Duration> {
+    pub(crate) fn time_to_first_token_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
+        if self.is_ready() {
+            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).collect();
+            times.sort();
+            let index = (percentile * times.len() as f64) as usize;
+            Ok(times[index])
+        } else {
+            Err(anyhow::anyhow!("No responses to calculate TTFT"))
+        }
+    }
+
+    pub(crate) fn inter_token_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut total_time = std::time::Duration::new(0, 0);
             for response in self.get_successful_responses() {
@@ -96,6 +115,25 @@ impl BenchmarkResults {
         }
     }
 
+    pub(crate) fn inter_token_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
+        if self.is_ready() {
+            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).collect();
+            times.sort();
+            let index = (percentile * times.len() as f64) as usize;
+            Ok(times[index])
+        } else {
+            Err(anyhow::anyhow!("No responses to calculate ITL"))
+        }
+    }
+
+    pub(crate) fn executor_type(&self) -> ExecutorType {
+        self.executor_type.clone()
+    }
+
+    pub(crate) fn executor_config(&self) -> ExecutorConfig {
+        self.executor_config.clone()
+    }
+
     fn get_successful_responses(&self) -> Vec<&TextGenerationAggregatedResponse> {
         self.aggregated_responses.iter().filter(|response| !response.failed).collect()
     }
@@ -104,20 +142,22 @@ impl BenchmarkResults {
 impl Debug for BenchmarkResults {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BenchmarkResult")
-            .field("total_responses", &self.total_requests())
+            .field("executor_type", &self.executor_type.to_string())
+            .field("total_requests", &self.total_requests())
             .field("start_time", &self.start_time())
             .field("end_time", &self.end_time())
             .field("total_tokens", &self.total_tokens())
             .field("token_throughput_secs", &self.token_throughput_secs())
             .field("duration", &self.duration())
-            .field("average_time_to_first_token", &self.average_time_to_first_token())
-            .field("average_inter_token_latency", &self.average_inter_token_latency())
+            .field("average_time_to_first_token", &self.time_to_first_token_avg())
+            .field("average_inter_token_latency", &self.inter_token_latency_avg())
             .field("failed_requests", &self.failed_requests())
             .field("successful_requests", &self.successful_requests())
             .field("request_rate", &self.request_rate())
             .finish()
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub(crate) struct BenchmarkReport {

@@ -4,7 +4,7 @@ use log::info;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use crate::benchmark::BenchmarkConfig;
+use crate::benchmark::{BenchmarkConfig, BenchmarkReportWriter, BenchmarkResultsWriter};
 use crate::executors::Executor;
 use crate::requests::{OpenAITextGenerationBackend, TextGenerationAggregatedResponse, TextGenerationRequest, TextGenerationResponse};
 
@@ -50,4 +50,7 @@ pub async fn run() {
         }
     };
     info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].request_rate().unwrap());
+    let report = benchmark.get_report();
+    let path = "results.json".to_string();
+    BenchmarkReportWriter::json(report, &path).await.unwrap();
 }
