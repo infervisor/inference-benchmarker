@@ -10,6 +10,7 @@ use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
 use crate::scheduler::ExecutorType;
 
+#[derive(Clone)]
 pub(crate) enum BenchmarkKind {
     Throughput,
     Sweep,
@@ -20,18 +21,18 @@ pub(crate) struct Benchmark {
     id: String,
     start_time: Option<std::time::Instant>,
     end_time: Option<std::time::Instant>,
-    max_vus: u64,
-    kind: BenchmarkKind,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
     requests: Arc<Mutex<dyn TextRequestGenerator + Send>>,
     report: BenchmarkReport,
-    duration: Duration,
+    config: BenchmarkConfig,
 }
 
+#[derive(Clone)]
 pub(crate) struct BenchmarkConfig {
     pub(crate) max_vus: u64,
-    pub(crate) duration: std::time::Duration,
+    pub(crate) duration: Duration,
     pub(crate) benchmark_kind: BenchmarkKind,
+    pub(crate) prewarm_duration: Duration,
 }
 
 impl Benchmark {
@@ -41,9 +42,7 @@ impl Benchmark {
             start_time: None,
             end_time: None,
             report: BenchmarkReport::new(),
-            kind: config.benchmark_kind,
-            max_vus: config.max_vus,
-            duration: config.duration,
+            config: config.clone(),
             backend,
             requests,
         }
@@ -55,7 +54,9 @@ impl Benchmark {
 
     pub(crate) async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
         self.start_time = Some(std::time::Instant::now());
-        match self.kind {
+        self.prewarm().await?;
+        info!("Prewarm complete");
+        match self.config.benchmark_kind {
             BenchmarkKind::Throughput => {
                 self.run_throughput().await?;
             }
@@ -77,11 +78,22 @@ impl Benchmark {
         }
     }
 
+    pub(crate) async fn prewarm(&mut self) -> anyhow::Result<()> {
+        info!("Prewarming backend");
+        let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantVUs, executors::ExecutorConfig {
+            max_vus: 1,
+            duration: self.config.prewarm_duration,
+            rate: None,
+        }, self.requests.clone());
+        scheduler.run().await;
+        Ok(())
+    }
+
     pub(crate) async fn run_throughput(&mut self) -> anyhow::Result<()> {
         info!("Running throughput benchmark");
-        let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::Throughput, executors::ExecutorConfig {
+        let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
-            duration: self.duration,
+            duration: self.config.duration,
             rate: None,
         }, self.requests.clone());
         scheduler.run().await;
@@ -102,8 +114,8 @@ impl Benchmark {
         for rate in rates {
             debug!("Running sweep benchmark with rate: {} req/s", rate);
             let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
-                max_vus: self.max_vus,
-                duration: self.duration,
+                max_vus: self.config.max_vus,
+                duration: self.config.duration,
                 rate: Some(rate),
             }, self.requests.clone());
             scheduler.run().await;

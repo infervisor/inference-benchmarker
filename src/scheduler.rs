@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 #[derive(Clone,strum_macros::Display)]
 pub(crate) enum ExecutorType {
-    Throughput,
+    ConstantVUs,
     ConstantArrivalRate,
 }
 
@@ -25,11 +25,11 @@ pub(crate) struct Scheduler {
 impl Scheduler {
     pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, executor_type: ExecutorType, config: ExecutorConfig, requests_generator: Arc<Mutex<dyn TextRequestGenerator + Send>>) -> Scheduler {
         match executor_type {
-            ExecutorType::Throughput => {
+            ExecutorType::ConstantVUs => {
                 return Scheduler {
                     backend: backend.clone(),
                     executor: Arc::new(ThroughputExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone())),
-                    results: Arc::from(Mutex::from(BenchmarkResults::new(ExecutorType::Throughput, config))),
+                    results: Arc::from(Mutex::from(BenchmarkResults::new(ExecutorType::ConstantVUs, config))),
                     requests_generator,
                 };
             }

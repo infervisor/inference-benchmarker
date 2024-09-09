@@ -40,6 +40,7 @@ pub async fn run() {
         max_vus: 10,
         duration: std::time::Duration::from_secs(10),
         benchmark_kind: benchmark::BenchmarkKind::Sweep,
+        prewarm_duration: std::time::Duration::from_secs(5),
     };
     let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)));
     let results = match benchmark.run().await {
