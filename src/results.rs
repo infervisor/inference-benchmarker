@@ -21,14 +21,16 @@ impl Display for BenchmarkErrors {
 
 #[derive(Clone)]
 pub(crate) struct BenchmarkResults {
+    pub(crate) id: String,
     aggregated_responses: Vec<TextGenerationAggregatedResponse>,
     executor_type: ExecutorType,
     executor_config: ExecutorConfig,
 }
 
 impl BenchmarkResults {
-    pub(crate) fn new(executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
+    pub(crate) fn new(id:String,executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
         BenchmarkResults {
+            id,
             aggregated_responses: Vec::new(),
             executor_type,
             executor_config,

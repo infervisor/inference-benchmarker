@@ -1,16 +1,18 @@
 use std::sync::{Arc};
 use std::time::Duration;
+use clap::builder::Str;
 use log::{debug, info};
 use reqwest::Request;
 use serde::Serialize;
 use tokio::fs;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, oneshot};
+use tokio::sync::mpsc::{Receiver, Sender};
 use crate::requests::{TextGenerationBackend, TextRequestGenerator};
 use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
-use crate::scheduler::ExecutorType;
+use crate::scheduler::{ExecutorType, SchedulerProgress};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, strum_macros::Display)]
 pub enum BenchmarkKind {
     Throughput,
     Sweep,
@@ -28,6 +30,7 @@ pub(crate) struct BenchmarkEvent {
     pub(crate) scheduler_type: ExecutorType,
     pub(crate) request_throughput: Option<f64>,
     pub(crate) progress: f64,
+    pub(crate) results: Option<BenchmarkResults>,
 }
 
 pub(crate) enum Event {
@@ -55,6 +58,11 @@ pub struct BenchmarkConfig {
     pub benchmark_kind: BenchmarkKind,
     pub warmup_duration: Duration,
     pub rate: Option<f64>,
+}
+
+pub struct BenchmarkProgress {
+    id: String,
+    progress: SchedulerProgress,
 }
 
 impl Benchmark {
@@ -102,51 +110,113 @@ impl Benchmark {
         }
     }
 
+    async fn handle_progress(&self, id: String) -> Sender<Option<SchedulerProgress>> {
+        let (tx, mut rx): (Sender<Option<SchedulerProgress>>, Receiver<Option<SchedulerProgress>>) = mpsc::channel(8);
+        let event_bus = self.event_bus.clone();
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    None => {
+                        break;
+                    }
+                    Some(progress) => {
+                        let progress = BenchmarkProgress {
+                            id: id.clone(),
+                            progress,
+                        };
+                        event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
+                            id: progress.id,
+                            scheduler_type: ExecutorType::ConstantVUs,
+                            request_throughput: Some(progress.progress.requests_throughput),
+                            progress: progress.progress.progress,
+                            results: None,
+                        })).unwrap();
+                    }
+                }
+            }
+        });
+        tx
+    }
+
     pub(crate) async fn warmup(&mut self) -> anyhow::Result<()> {
+        // run a warmup benchmark to prewarm the server
+
+        let id = "warmup".to_string();
+
+        // notify start event
         self.event_bus.send(Event::BenchmarkStart(BenchmarkEvent {
-            id: "warmup".to_string(),
+            id: id.to_string(),
             scheduler_type: ExecutorType::ConstantVUs,
             request_throughput: None,
             progress: 0.0,
+            results: None,
         }))?;
-        let scheduler = scheduler::Scheduler::new(self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
+
+        // create progress handler
+        let tx = self.handle_progress(id.clone()).await;
+
+        // start scheduler
+        let scheduler = scheduler::Scheduler::new(id, self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
             duration: self.config.warmup_duration,
             rate: None,
-        }, self.requests.clone());
+        }, self.requests.clone(), tx.clone());
         scheduler.run().await;
+
         let results = scheduler.results.lock().await.clone();
+
+        // send None to close the progress handler
+        tx.send(None).await.unwrap();
+
+        // notify end event
         self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
             id: "warmup".to_string(),
             scheduler_type: ExecutorType::ConstantVUs,
             request_throughput: results.request_rate().ok(),
             progress: 100.0,
+            results: None,
         }))?;
         Ok(())
     }
 
     pub(crate) async fn run_throughput(&mut self) -> anyhow::Result<()> {
         info!("Running throughput benchmark");
+
+        let id = "throughput".to_string();
+
+        // notify start event
         self.event_bus.send(Event::BenchmarkStart(BenchmarkEvent {
-            id: "throughput".to_string(),
+            id: id.clone(),
             scheduler_type: ExecutorType::ConstantVUs,
             request_throughput: None,
             progress: 0.0,
+            results: None,
         }))?;
-        let scheduler = scheduler::Scheduler::new(self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
+
+        // create progress handler
+        let tx = self.handle_progress(id.clone()).await;
+
+        // start scheduler
+        let scheduler = scheduler::Scheduler::new(id.clone(), self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
             duration: self.config.duration,
             rate: None,
-        }, self.requests.clone());
+        }, self.requests.clone(), tx.clone());
         scheduler.run().await;
         let results = scheduler.results.lock().await.clone();
-        let rate=results.request_rate().ok();
-        self.report.add_benchmark_result(results);
+        let rate = results.request_rate().ok();
+        self.report.add_benchmark_result(results.clone());
+
+        // send None to close the progress handler
+        tx.send(None).await.unwrap();
+
+        // notify end event
         self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
-            id: "throughput".to_string(),
+            id: id.clone(),
             scheduler_type: ExecutorType::ConstantVUs,
             request_throughput: rate,
             progress: 100.0,
+            results: Some(results.clone()),
         }))?;
         Ok(())
     }
@@ -156,35 +226,52 @@ impl Benchmark {
         let throughput_results = self.run_throughput().await?;
         //run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
         let max_throughput = self.report.get_results()[0].request_rate()?;
+        // notify event bus
         self.event_bus.send(Event::Message(EventMessage {
             message: format!("Max throughput detected at: {:.2} req/s", max_throughput),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;
         let mut rates = Vec::new();
-        for i in 1..=3 {
+        for i in 1..=5 {
             rates.push(i as f64 * max_throughput / 10.0);
         }
         for rate in rates {
             debug!("Running sweep benchmark with rate: {} req/s", rate);
+
+            let id = format!("constant@{:.2}req/s", rate);
+
+            // notify start event
             self.event_bus.send(Event::BenchmarkStart(BenchmarkEvent {
-                id: format!("constant@{:.2}req/s", rate),
+                id: id.clone(),
                 scheduler_type: ExecutorType::ConstantArrivalRate,
                 request_throughput: None,
                 progress: 0.0,
+                results: None,
             }))?;
-            let scheduler = scheduler::Scheduler::new(self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
+
+            // create progress handler
+            let tx = self.handle_progress(id.clone()).await;
+
+            // start scheduler
+            let scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
                 max_vus: self.config.max_vus,
                 duration: self.config.duration,
                 rate: Some(rate),
-            }, self.requests.clone());
+            }, self.requests.clone(), tx.clone());
             scheduler.run().await;
             let results = scheduler.results.lock().await.clone();
+
+            // send None to close the progress handler
+            tx.send(None).await.unwrap();
+
+            // notify end event
             self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
                 id: format!("constant@{:.2}req/s", rate),
                 scheduler_type: ExecutorType::ConstantArrivalRate,
                 request_throughput: results.request_rate().ok(),
                 progress: 100.0,
+                results: Some(results.clone()),
             }))?;
         }
         Ok(())

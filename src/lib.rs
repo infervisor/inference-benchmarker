@@ -66,9 +66,10 @@ pub async fn run(url: String,
         // enable logging
         env_logger::init();
     }
+    let config_clone = config.clone();
     tokio::spawn(async move {
         if interactive{
-            run_console(rx).await;
+            run_console(config_clone, rx).await;
         }
     });
     let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx);

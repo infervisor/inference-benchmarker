@@ -20,7 +20,7 @@ pub(crate) struct ExecutorConfig {
 
 #[async_trait]
 pub(crate) trait Executor {
-    async fn run(&self, requests: Arc<Mutex<dyn crate::requests::TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>);
+    async fn run(&self, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>);
 }
 
 pub(crate) struct ConstantVUsExecutor {
