@@ -11,7 +11,9 @@ use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as Other
     Block, Paragraph, Widget,
 }, DefaultTerminal, Frame, symbols};
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Dataset, LegendPosition, Row, Table};
+use ratatui::text::Span;
+use ratatui::widgets::{Dataset, LegendPosition, List, ListItem, Row, Table};
+use ratatui::widgets::ListDirection::BottomToTop;
 use strum_macros::EnumString;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
@@ -245,15 +247,16 @@ impl Widget for &App {
         let logs_block = Block::bordered()
             .title(logs_title.alignment(Alignment::Center))
             .border_set(border::THICK);
-        let logs_table = Table::new(
-            state.messages.iter().map(|m| {
-                let cells = vec![
+        List::new(
+            state.messages.iter().rev().map(|m| {
+                let content=Line::from(vec![
                     m.formatted_timestamp().clone().gray(),
-                    m.message.clone().white(),
-                ];
-                Row::new(cells)
-            }).collect::<Vec<_>>(),
-            vec![Constraint::Length(30), Constraint::Min(5)])
+                    Span::raw(" "),
+                    Span::raw(m.message.to_string()).bold(),
+                ]);
+                ListItem::new(content)
+            }).collect::<Vec<_>>())
+            .direction(BottomToTop)
             .block(logs_block)
             .render(bottom_layout[1], buf);
 
@@ -336,7 +339,7 @@ fn get_max_bounds(data: &Vec<(f64, f64)>, default_max: (f64, f64)) -> (f64, f64)
 
 fn get_axis_labels(min: f64, max: f64, num_labels: u32) -> Vec<String> {
     let step = (max - min) / num_labels as f64;
-    (0..num_labels).map(|i| format!("{:.2}",min + i as f64 * step)).collect()
+    (0..num_labels).map(|i| format!("{:.2}", min + i as f64 * step)).collect()
 }
 
 
