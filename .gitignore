@@ -168,3 +168,4 @@ Cargo.lock
 
 .idea
 *.json
+*.txt
