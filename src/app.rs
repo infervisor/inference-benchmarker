@@ -240,6 +240,7 @@ impl Widget for &App {
                 ]
             )
             .split(bottom_layout[0]);
+        // LOGS
         let logs_title = Title::from("Logs".bold());
         let logs_block = Block::bordered()
             .title(logs_title.alignment(Alignment::Center))
@@ -278,15 +279,15 @@ impl Widget for &App {
                 b.id.clone().white(),
                 b.status.to_string().white(),
                 format!("{:4.0}%", b.progress).white(),
-                format!("{} req/sec avg", b.throughput).on_green().bold(),
+                format!("{:>6.6} req/sec avg", b.throughput).green().bold(),
             ];
             Row::new(cells)
         }).collect::<Vec<_>>();
         let widths = [
             Constraint::Length(30),
-            Constraint::Length(15),
             Constraint::Length(10),
-            Constraint::Length(10),
+            Constraint::Length(5),
+            Constraint::Length(20),
         ];
         // steps table
         Table::new(step_rows, widths)
@@ -314,7 +315,7 @@ impl Widget for &App {
             .bounds([0.0, xmax])
             .labels(get_axis_labels(0.0, xmax, 5));
         let y_axis = ratatui::widgets::Axis::default()
-            .title("Throughput (req/s)".to_string())
+            .title("Throughput (tokens/s)".to_string())
             .style(ratatui::style::Style::default().white())
             .bounds([0.0, ymax])
             .labels(get_axis_labels(0.0, ymax, 5));

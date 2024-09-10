@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
 use tokio::sync::mpsc::Sender;
-use reqwest_eventsource::{Event, EventSource};
+use reqwest_eventsource::{Error, Event, EventSource};
 use log::{debug, error, info, trace};
 use rand_distr::Distribution;
 use tokenizers::Tokenizer;
@@ -110,9 +110,9 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 "max_tokens": request.max_tokens,
                 "stream": true,
             }));
-        let mut es = EventSource::new(req).unwrap();
         // start timer
         aggregated_response.start();
+        let mut es = EventSource::new(req).unwrap();
         let mut final_response = "".to_string();
         while let Some(event) = es.next().await {
             match event {
@@ -139,17 +139,25 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             aggregated_response.add_tokens(1);
                             aggregated_response.stop();
                             let content = choices[0].clone().delta.unwrap().content;
-                            sender.send(aggregated_response.clone()).await.expect("Error sending response to channel");
                             trace!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens}, response: {message}", prompt = request.prompt, max_tokens = request.max_tokens,message = &content);
                         }
                     };
                 }
                 Err(e) => {
-                    aggregated_response.stop();
+                    match e {
+                        Error::Utf8(_) => { aggregated_response.fail(); }
+                        Error::Parser(_) => { aggregated_response.fail(); }
+                        Error::Transport(_) => { aggregated_response.fail(); }
+                        Error::InvalidContentType(_, _) => { aggregated_response.fail(); }
+                        Error::InvalidStatusCode(_, _) => { aggregated_response.fail(); }
+                        Error::InvalidLastEventId(_) => { aggregated_response.fail(); }
+                        Error::StreamEnded => {}
+                    }
                     es.close();
                 }
             };
         };
+        sender.send(aggregated_response.clone()).await.expect("Error sending response to channel");
         //debug!("Final response: {response}", response = final_response);
     }
 }

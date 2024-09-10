@@ -7,7 +7,7 @@ use crate::results::BenchmarkErrors::NoResponses;
 use crate::scheduler::ExecutorType;
 
 #[derive(Debug)]
-enum BenchmarkErrors{
+enum BenchmarkErrors {
     NoResponses,
 }
 
@@ -28,7 +28,7 @@ pub(crate) struct BenchmarkResults {
 }
 
 impl BenchmarkResults {
-    pub(crate) fn new(id:String,executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
+    pub(crate) fn new(id: String, executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
         BenchmarkResults {
             id,
             aggregated_responses: Vec::new(),
@@ -75,6 +75,14 @@ impl BenchmarkResults {
         }
     }
 
+    pub(crate) fn successful_request_rate(&self) -> anyhow::Result<f64> {
+        if self.is_ready() {
+            let total_requests = self.successful_requests();
+            Ok(total_requests as f64 / self.duration().unwrap_or_default().as_secs_f64())
+        } else {
+            Err(anyhow::anyhow!(NoResponses))
+        }
+    }
     pub(crate) fn request_rate(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
             let total_requests = self.total_requests();
@@ -158,6 +166,7 @@ impl BenchmarkResults {
 impl Debug for BenchmarkResults {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BenchmarkResult")
+            .field("id", &self.id)
             .field("executor_type", &self.executor_type.to_string())
             .field("total_requests", &self.total_requests())
             .field("start_time", &self.start_time())
@@ -169,7 +178,7 @@ impl Debug for BenchmarkResults {
             .field("average_inter_token_latency", &self.inter_token_latency_avg().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
             .field("failed_requests", &self.failed_requests())
             .field("successful_requests", &self.successful_requests())
-            .field("request_rate", &self.request_rate().or::<anyhow::Result<f64>>(Ok(-1.0)))
+            .field("request_rate", &self.successful_request_rate().or::<anyhow::Result<f64>>(Ok(-1.0)))
             .finish()
     }
 }

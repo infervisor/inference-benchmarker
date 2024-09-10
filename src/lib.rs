@@ -1,10 +1,13 @@
+use std::fs::File;
+use std::io::Write;
 use std::sync::{Arc};
+use chrono::Local;
 use futures_util::StreamExt;
-use log::{error, info};
+use log::{error, info, Level, LevelFilter};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use crate::benchmark::{BenchmarkReportWriter, BenchmarkResultsWriter};
+use crate::benchmark::{BenchmarkReportWriter, BenchmarkResultsWriter, Event, EventMessage};
 use crate::executors::Executor;
 use crate::requests::{OpenAITextGenerationBackend, TextGenerationAggregatedResponse, TextGenerationRequest, TextGenerationResponse};
 pub use crate::benchmark::{BenchmarkKind, BenchmarkConfig};
@@ -62,17 +65,34 @@ pub async fn run(url: String,
         rate,
     };
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    if !interactive{
-        // enable logging
+    if interactive {
+        // send logs to file
+        let target = Box::new(File::create("log.txt").expect("Can't create file"));
+        env_logger::Builder::new()
+            .target(env_logger::Target::Pipe(target))
+            .filter(Some("text_generation_inference_benchmark"), LevelFilter::Debug)
+            .format(|buf, record| {
+                writeln!(
+                    buf,
+                    "[{} {} {}:{}] {}",
+                    Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                    record.level(),
+                    record.file().unwrap_or("unknown"),
+                    record.line().unwrap_or(0),
+                    record.args()
+                )
+            })
+            .init();
+    } else {
         env_logger::init();
     }
     let config_clone = config.clone();
-    tokio::spawn(async move {
-        if interactive{
+    let ui_thread = tokio::spawn(async move {
+        if interactive {
             run_console(config_clone, rx).await;
         }
     });
-    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx);
+    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone());
     let results = match benchmark.run().await {
         Ok(results) => results.get_results(),
         Err(e) => {
@@ -80,8 +100,14 @@ pub async fn run(url: String,
             return;
         }
     };
-    info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].request_rate().unwrap());
+    info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].successful_request_rate().unwrap());
     let report = benchmark.get_report();
     let path = "results.json".to_string();
     BenchmarkReportWriter::json(report, &path).await.unwrap();
+    let _ = tx.send(Event::Message(EventMessage {
+        message: "Benchmark finished".to_string(),
+        timestamp: chrono::Utc::now(),
+        level: Level::Info,
+    }));
+    ui_thread.await.unwrap();
 }

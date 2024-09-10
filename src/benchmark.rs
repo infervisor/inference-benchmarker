@@ -164,6 +164,7 @@ impl Benchmark {
         scheduler.run().await;
 
         let results = scheduler.results.lock().await.clone();
+        self.report.add_benchmark_result(results.clone());
 
         // send None to close the progress handler
         tx.send(None).await.unwrap();
@@ -172,7 +173,7 @@ impl Benchmark {
         self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
             id: "warmup".to_string(),
             scheduler_type: ExecutorType::ConstantVUs,
-            request_throughput: results.request_rate().ok(),
+            request_throughput: results.successful_request_rate().ok(),
             progress: 100.0,
             results: None,
         }))?;
@@ -198,13 +199,13 @@ impl Benchmark {
 
         // start scheduler
         let scheduler = scheduler::Scheduler::new(id.clone(), self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
-            max_vus: 1,
+            max_vus: self.config.max_vus,
             duration: self.config.duration,
             rate: None,
         }, self.requests.clone(), tx.clone());
         scheduler.run().await;
         let results = scheduler.results.lock().await.clone();
-        let rate = results.request_rate().ok();
+        let rate = results.successful_request_rate().ok();
         self.report.add_benchmark_result(results.clone());
 
         // send None to close the progress handler
@@ -223,9 +224,10 @@ impl Benchmark {
 
     pub(crate) async fn run_sweep(&mut self) -> anyhow::Result<()> {
         // run a throughput benchmark to retrieve the maximum throughput of server
-        let throughput_results = self.run_throughput().await?;
-        //run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
-        let max_throughput = self.report.get_results()[0].request_rate()?;
+        self.run_throughput().await?;
+        // get the max throughput from the second benchmark result (first is warmup)
+        let max_throughput = self.report.get_results()[1].successful_request_rate()?;
+        // run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
         // notify event bus
         self.event_bus.send(Event::Message(EventMessage {
             message: format!("Max throughput detected at: {:.2} req/s", max_throughput),
@@ -233,8 +235,9 @@ impl Benchmark {
             level: log::Level::Info,
         }))?;
         let mut rates = Vec::new();
-        for i in 1..=5 {
-            rates.push(i as f64 * max_throughput / 10.0);
+        let num_rates = 5;
+        for i in 1..=num_rates {
+            rates.push(i as f64 * max_throughput / num_rates as f64);
         }
         for rate in rates {
             debug!("Running sweep benchmark with rate: {} req/s", rate);
@@ -261,6 +264,7 @@ impl Benchmark {
             }, self.requests.clone(), tx.clone());
             scheduler.run().await;
             let results = scheduler.results.lock().await.clone();
+            self.report.add_benchmark_result(results.clone());
 
             // send None to close the progress handler
             tx.send(None).await.unwrap();
@@ -269,7 +273,7 @@ impl Benchmark {
             self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
                 id: format!("constant@{:.2}req/s", rate),
                 scheduler_type: ExecutorType::ConstantArrivalRate,
-                request_throughput: results.request_rate().ok(),
+                request_throughput: results.successful_request_rate().ok(),
                 progress: 100.0,
                 results: Some(results.clone()),
             }))?;
@@ -281,6 +285,7 @@ impl Benchmark {
 
 #[derive(Serialize)]
 pub(crate) struct BenchmarkResultsWriter {
+    id: String,
     executor_type: String,
     config: executors::ExecutorConfig,
     total_requests: u64,
@@ -301,6 +306,7 @@ pub(crate) struct BenchmarkResultsWriter {
 impl BenchmarkResultsWriter {
     pub(crate) fn new(results: BenchmarkResults) -> anyhow::Result<BenchmarkResultsWriter> {
         Ok(BenchmarkResultsWriter {
+            id: results.id.clone(),
             executor_type: results.executor_type().to_string(),
             config: results.executor_config(),
             total_requests: results.total_requests() as u64,
@@ -315,7 +321,7 @@ impl BenchmarkResultsWriter {
             inter_token_latency_ms_p95: results.inter_token_latency_percentile(0.95)?.as_millis(),
             failed_requests: results.failed_requests() as u64,
             successful_requests: results.successful_requests() as u64,
-            request_rate: results.request_rate()?,
+            request_rate: results.successful_request_rate()?,
         })
     }
 }

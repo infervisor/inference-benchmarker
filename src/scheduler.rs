@@ -91,7 +91,7 @@ impl Scheduler {
                         total_requests: result.total_requests() as u64,
                         failed_requests: result.failed_requests() as u64,
                         successful_requests: result.successful_requests() as u64,
-                        requests_throughput: result.request_rate().unwrap_or_default(),
+                        requests_throughput: result.successful_request_rate().unwrap_or_default(),
                     })).await.expect("should send progress message");
                 }
             }).await;
