@@ -17,6 +17,7 @@ mod scheduler;
 mod results;
 mod benchmark;
 mod app;
+mod event;
 
 pub async fn run(url: String,
                  tokenizer_name: String,
@@ -25,6 +26,7 @@ pub async fn run(url: String,
                  rate: Option<f64>,
                  benchmark_kind: String,
                  prewarm_duration: std::time::Duration,
+                 interactive: bool,
 ) {
     info!("Starting benchmark");
     let filepath = "data.json".to_string();
@@ -56,10 +58,20 @@ pub async fn run(url: String,
             "Optimum" => BenchmarkKind::Optimum,
             _ => BenchmarkKind::Sweep,
         },
-        prewarm_duration,
+        warmup_duration: prewarm_duration,
         rate,
     };
-    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)));
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    if !interactive{
+        // enable logging
+        env_logger::init();
+    }
+    tokio::spawn(async move {
+        if interactive{
+            run_console(rx).await;
+        }
+    });
+    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx);
     let results = match benchmark.run().await {
         Ok(results) => results.get_results(),
         Err(e) => {

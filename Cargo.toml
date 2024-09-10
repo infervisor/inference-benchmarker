@@ -27,3 +27,4 @@ humantime = "2.1.0"
 clap-verbosity-flag = "2.2.1"
 ratatui = { version = "0.28.1", features = ["all-widgets"] }
 crossterm = "0.28.1"
+chrono = "0.4.38"

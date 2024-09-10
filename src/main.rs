@@ -52,9 +52,10 @@ fn parse_url(s: &str) -> Result<String, Error> {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    // env_logger::init();
     let args = Args::parse();
 
-    // run(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration).await;
-    run_console(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration);
+    let interactive = args.output == "console";
+    run(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration, interactive).await;
+    // run_console(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration);
 }
