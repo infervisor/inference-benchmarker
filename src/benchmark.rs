@@ -18,17 +18,17 @@ pub enum BenchmarkKind {
 }
 
 pub struct EventMessage {
-    pub(crate) message: String,
-    pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
-    pub(crate) level: log::Level,
+    pub message: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub level: log::Level,
 }
 
 pub struct BenchmarkEvent {
-    pub(crate) id: String,
-    pub(crate) scheduler_type: ExecutorType,
-    pub(crate) request_throughput: Option<f64>,
-    pub(crate) progress: f64,
-    pub(crate) results: Option<BenchmarkResults>,
+    pub id: String,
+    pub scheduler_type: ExecutorType,
+    pub request_throughput: Option<f64>,
+    pub progress: f64,
+    pub results: Option<BenchmarkResults>,
 }
 
 pub enum Event {
@@ -39,8 +39,7 @@ pub enum Event {
     BenchmarkReportEnd
 }
 
-pub(crate) struct Benchmark {
-    id: String,
+pub struct Benchmark {
     start_time: Option<std::time::Instant>,
     end_time: Option<std::time::Instant>,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
@@ -66,9 +65,8 @@ pub struct BenchmarkProgress {
 }
 
 impl Benchmark {
-    pub(crate) fn new(id: String, config: BenchmarkConfig, backend: Box<dyn TextGenerationBackend + Send + Sync>, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, event_bus: mpsc::UnboundedSender<Event>, stop_sender: broadcast::Sender<()>) -> Benchmark {
+    pub fn new(config: BenchmarkConfig, backend: Box<dyn TextGenerationBackend + Send + Sync>, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, event_bus: mpsc::UnboundedSender<Event>, stop_sender: broadcast::Sender<()>) -> Benchmark {
         Benchmark {
-            id,
             start_time: None,
             end_time: None,
             report: BenchmarkReport::new(),
@@ -80,11 +78,11 @@ impl Benchmark {
         }
     }
 
-    pub(crate) fn get_report(&self) -> BenchmarkReport {
+    pub fn get_report(&self) -> BenchmarkReport {
         self.report.clone()
     }
 
-    pub(crate) async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
+    pub async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
         self.start_time = Some(std::time::Instant::now());
         info!("Prewarming backend");
         self.warmup().await?;
@@ -109,7 +107,7 @@ impl Benchmark {
         Ok(self.report.clone())
     }
 
-    pub(crate) fn duration(&self) -> Option<std::time::Duration> {
+    pub fn duration(&self) -> Option<std::time::Duration> {
         match (self.start_time, self.end_time) {
             (Some(start), Some(end)) => Some(end.duration_since(start)),
             _ => None,
@@ -126,15 +124,15 @@ impl Benchmark {
                         break;
                     }
                     Some(progress) => {
-                        let progress = BenchmarkProgress {
+                        let progress_evt = BenchmarkProgress {
                             id: id.clone(),
                             progress,
                         };
                         event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
-                            id: progress.id,
+                            id: progress_evt.id,
                             scheduler_type: ExecutorType::ConstantVUs,
-                            request_throughput: Some(progress.progress.requests_throughput),
-                            progress: progress.progress.progress,
+                            request_throughput: Some(progress_evt.progress.requests_throughput),
+                            progress: progress_evt.progress.progress,
                             results: None,
                         })).unwrap();
                     }
@@ -144,7 +142,7 @@ impl Benchmark {
         tx
     }
 
-    pub(crate) async fn warmup(&mut self) -> anyhow::Result<()> {
+    pub async fn warmup(&mut self) -> anyhow::Result<()> {
         // run a warmup benchmark to prewarm the server
 
         let id = "warmup".to_string();
@@ -167,9 +165,9 @@ impl Benchmark {
             duration: self.config.warmup_duration,
             rate: None,
         }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
-        scheduler.run().await;
+        scheduler.run().await?;
 
-        let results = scheduler.results.lock().await.clone();
+        let results = scheduler.get_results().lock().await.clone();
         self.report.add_benchmark_result(results.clone());
 
         // send None to close the progress handler
@@ -186,7 +184,7 @@ impl Benchmark {
         Ok(())
     }
 
-    pub(crate) async fn run_throughput(&mut self) -> anyhow::Result<()> {
+    pub async fn run_throughput(&mut self) -> anyhow::Result<()> {
         info!("Running throughput benchmark");
 
         let id = "throughput".to_string();
@@ -209,8 +207,8 @@ impl Benchmark {
             duration: self.config.duration,
             rate: None,
         }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
-        scheduler.run().await;
-        let results = scheduler.results.lock().await.clone();
+        scheduler.run().await?;
+        let results = scheduler.get_results().lock().await.clone();
         let rate = results.successful_request_rate().ok();
         self.report.add_benchmark_result(results.clone());
 
@@ -228,7 +226,7 @@ impl Benchmark {
         Ok(())
     }
 
-    pub(crate) async fn run_sweep(&mut self) -> anyhow::Result<()> {
+    pub async fn run_sweep(&mut self) -> anyhow::Result<()> {
         // run a throughput benchmark to retrieve the maximum throughput of server
         self.run_throughput().await?;
         // get the max throughput from the second benchmark result (first is warmup)
@@ -268,8 +266,8 @@ impl Benchmark {
                 duration: self.config.duration,
                 rate: Some(rate),
             }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
-            scheduler.run().await;
-            let results = scheduler.results.lock().await.clone();
+            scheduler.run().await?;
+            let results = scheduler.get_results().lock().await.clone();
             self.report.add_benchmark_result(results.clone());
 
             // send None to close the progress handler
@@ -290,7 +288,7 @@ impl Benchmark {
 
 
 #[derive(Serialize)]
-pub(crate) struct BenchmarkResultsWriter {
+pub struct BenchmarkResultsWriter {
     id: String,
     executor_type: String,
     config: executors::ExecutorConfig,
@@ -310,7 +308,7 @@ pub(crate) struct BenchmarkResultsWriter {
 }
 
 impl BenchmarkResultsWriter {
-    pub(crate) fn new(results: BenchmarkResults) -> anyhow::Result<BenchmarkResultsWriter> {
+    pub fn new(results: BenchmarkResults) -> anyhow::Result<BenchmarkResultsWriter> {
         Ok(BenchmarkResultsWriter {
             id: results.id.clone(),
             executor_type: results.executor_type().to_string(),
@@ -332,11 +330,11 @@ impl BenchmarkResultsWriter {
     }
 }
 
-pub(crate) struct BenchmarkReportWriter {}
+pub struct BenchmarkReportWriter {}
 
 
 impl BenchmarkReportWriter {
-    pub(crate) async fn json(report: BenchmarkReport, path: &str) -> anyhow::Result<()> {
+    pub async fn json(report: BenchmarkReport, path: &str) -> anyhow::Result<()> {
         // write the benchmark report to json
         let mut results: Vec<BenchmarkResultsWriter> = Vec::new();
         for result in report.get_results() {

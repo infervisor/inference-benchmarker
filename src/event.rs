@@ -10,7 +10,7 @@ pub enum AppEvent {
 }
 
 
-pub(crate) async fn terminal_event_task(
+pub async fn terminal_event_task(
     fps: u32,
     event_sender: mpsc::Sender<AppEvent>,
     mut shutdown_receiver: broadcast::Receiver<()>,

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as OtherStylize, symbols::border, text::{Line, Text}, widgets::{
     block::{Title},
     Block, Paragraph, Widget,
@@ -62,15 +62,25 @@ pub async fn run_console(
                                 status: BenchmarkStatus::Running,
                                 progress: 0.0,
                                 throughput: "-".to_string(),
+                                successful_requests: 0,
+                                failed_requests: 0,
                             }));
                         }
                         BenchmarkEvent::BenchmarkProgress(event) => {
-                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                                id: event.id,
-                                status: BenchmarkStatus::Running,
-                                progress: event.progress,
-                                throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
-                            }));
+                            match event.results {
+                                Some(results)=>{
+                                    let (successful_requests,failed_requests) = (results.successful_requests() as u64,results.failed_requests() as u64);
+                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                        id: event.id,
+                                        status: BenchmarkStatus::Running,
+                                        progress: event.progress,
+                                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
+                                        successful_requests,
+                                        failed_requests,
+                                    }));
+                                }
+                                None=>{}
+                            }
                         }
                         BenchmarkEvent::BenchmarkEnd(event) => {
                             dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
@@ -78,14 +88,17 @@ pub async fn run_console(
                                 level: LogLevel::Info,
                                 timestamp: chrono::Utc::now(),
                             }));
-                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                                id: event.id,
-                                status: BenchmarkStatus::Completed,
-                                progress: 100.0,
-                                throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
-                            }));
                             match event.results {
                                 Some(results) => {
+                                    let (successful_requests,failed_requests) = (results.successful_requests() as u64,results.failed_requests() as u64);
+                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                        id: event.id,
+                                        status: BenchmarkStatus::Completed,
+                                        progress: 100.0,
+                                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
+                                        successful_requests,
+                                        failed_requests,
+                                    }));
                                     dispatcher.lock().expect("lock").dispatch(Action::AddBenchmarkResults(results));
                                 }
                                 None => {}
@@ -127,7 +140,7 @@ pub async fn run_console(
 }
 
 impl App {
-    pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>, stop_sender:Sender<()>) -> App {
+    pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>, stop_sender: Sender<()>) -> App {
         let store = Arc::from(Mutex::new(Store::new()));
         let dispatcher = Arc::from(Mutex::new(Dispatcher { store: store.clone() }));
         App {
@@ -161,14 +174,7 @@ impl App {
             }
         }
     }
-    fn handle_terminal_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
-            }
-            _ => { Ok(()) }
-        }
-    }
+
     fn handle_key_event(&mut self, key_event: KeyEvent) -> io::Result<()> {
         match key_event {
             KeyEvent {
@@ -272,8 +278,15 @@ impl Widget for &App {
             .border_set(border::THICK);
         List::new(
             state.messages.iter().rev().map(|m| {
+                let level_span = match m.level {
+                    LogLevel::Info => Span::raw(m.level.to_string()).green().bold(),
+                    LogLevel::Warning => Span::raw(m.level.to_string()).yellow().bold(),
+                    LogLevel::Error => Span::raw(m.level.to_string()).red().bold(),
+                };
                 let content = Line::from(vec![
                     m.formatted_timestamp().clone().gray(),
+                    Span::raw(" "),
+                    level_span,
                     Span::raw(" "),
                     Span::raw(m.message.to_string()).bold(),
                 ]);
@@ -306,6 +319,7 @@ impl Widget for &App {
                 b.status.to_string().white(),
                 format!("{:4.0}%", b.progress).white(),
                 format!("{:>6.6} req/sec avg", b.throughput).green().bold(),
+                format!("{}|{}",b.successful_requests, b.failed_requests).green().bold(),
             ];
             Row::new(cells)
         }).collect::<Vec<_>>();
@@ -380,7 +394,6 @@ impl Dispatcher {
 
 #[derive(Clone)]
 struct AppState {
-    counter: i32,
     messages: Vec<LogMessageUI>,
     benchmarks: Vec<BenchmarkUI>,
     results: Vec<BenchmarkResults>,
@@ -389,7 +402,6 @@ struct AppState {
 impl AppState {
     fn new() -> Self {
         Self {
-            counter: 0,
             messages: Vec::new(),
             benchmarks: Vec::new(),
             results: Vec::new(),
@@ -411,8 +423,6 @@ impl Store {
 
     fn update(&mut self, action: Action) {
         match action {
-            Action::Increment => self.state.counter += 1,
-            Action::Decrement => self.state.counter -= 1,
             Action::LogMessage(message) => self.state.messages.push(message),
             Action::AddBenchmark(benchmark) => {
                 // add or update benchmark
@@ -446,13 +456,12 @@ impl Store {
 }
 
 enum Action {
-    Increment,
-    Decrement,
     LogMessage(LogMessageUI),
     AddBenchmark(BenchmarkUI),
     AddBenchmarkResults(BenchmarkResults),
 }
 
+#[allow(dead_code)]
 #[derive(Clone, strum_macros::Display)]
 enum LogLevel {
     Info,
@@ -469,7 +478,6 @@ struct LogMessageUI {
 
 impl LogMessageUI {
     fn formatted_timestamp(&self) -> String {
-        // self.timestamp.format("%Y-%m-%d %H:%M:%SZ").to_string()
         self.timestamp.to_rfc3339()
     }
 }
@@ -480,11 +488,12 @@ struct BenchmarkUI {
     status: BenchmarkStatus,
     progress: f64,
     throughput: String,
+    successful_requests: u64,
+    failed_requests: u64,
 }
 
 #[derive(Clone, strum_macros::Display)]
 enum BenchmarkStatus {
     Running,
     Completed,
-    Failed,
 }

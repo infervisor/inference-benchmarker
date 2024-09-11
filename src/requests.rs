@@ -7,15 +7,16 @@ use log::{debug, error, info, trace};
 use rand_distr::Distribution;
 use tokenizers::Tokenizer;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
-pub(crate) struct TextGenerationRequest {
+pub struct TextGenerationRequest {
     pub prompt: String,
     pub max_tokens: u32,
 }
 
 #[async_trait]
-pub(crate) trait TextGenerationBackend: TextGenerationBackendClone {
+pub trait TextGenerationBackend: TextGenerationBackendClone {
     async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationAggregatedResponse>);
 }
 
@@ -37,36 +38,36 @@ impl Clone for Box<dyn TextGenerationBackend + Send + Sync> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct OpenAITextGenerationBackend {
-    pub(crate) api_key: String,
-    pub(crate) base_url: String,
+pub struct OpenAITextGenerationBackend {
+    pub api_key: String,
+    pub base_url: String,
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
-pub(crate) struct OpenAITextGenerationMessage {
-    pub(crate) content: String,
-    pub(crate) role: String,
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct OpenAITextGenerationMessage {
+    pub content: String,
+    pub role: String,
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
-pub(crate) struct OpenAITextGenerationDelta {
-    pub(crate) content: String,
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct OpenAITextGenerationDelta {
+    pub content: String,
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
-pub(crate) struct OpenAITextGenerationChoice {
-    pub(crate) message: Option<OpenAITextGenerationMessage>,
-    pub(crate) finish_reason: Option<String>,
-    pub(crate) delta: Option<OpenAITextGenerationDelta>,
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct OpenAITextGenerationChoice {
+    pub message: Option<OpenAITextGenerationMessage>,
+    pub finish_reason: Option<String>,
+    pub delta: Option<OpenAITextGenerationDelta>,
 }
 
-#[derive(serde::Deserialize, Clone)]
-pub(crate) struct OpenAITextGenerationResponse {
-    pub(crate) choices: Vec<OpenAITextGenerationChoice>,
+#[derive(Deserialize, Serialize, Clone)]
+pub struct OpenAITextGenerationResponse {
+    pub choices: Vec<OpenAITextGenerationChoice>,
 }
 
 impl OpenAITextGenerationBackend {
-    pub(crate) fn new(api_key: String, base_url: String) -> Self {
+    pub fn new(api_key: String, base_url: String) -> Self {
         Self {
             api_key,
             base_url,
@@ -149,32 +150,30 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
     }
 }
 
-pub(crate) trait TextRequestGenerator: Sync {
+pub trait TextRequestGenerator: Sync {
     fn generate_request(&mut self) -> TextGenerationRequest;
 }
 
 #[derive(Clone)]
-pub(crate) struct ShareGPTTextRequestGenerator {
-    pub(crate) filepath: String,
-    pub conversations: Vec<ShareGPTEntry>,
+pub struct ShareGPTTextRequestGenerator {
     pub requests: Vec<TextGenerationRequest>,
     current_index: Arc<AtomicI64>,
 }
 
-#[derive(serde::Deserialize, Clone)]
-pub(crate) struct ShareGPTConversation {
-    pub(crate) from: String,
-    pub(crate) value: String,
+#[derive(Deserialize, Serialize, Clone)]
+pub struct ShareGPTConversation {
+    pub from: String,
+    pub value: String,
 }
 
-#[derive(serde::Deserialize, Clone)]
-pub(crate) struct ShareGPTEntry {
-    pub(crate) id: String,
-    pub(crate) conversations: Vec<ShareGPTConversation>,
+#[derive(Deserialize, Serialize, Clone)]
+pub struct ShareGPTEntry {
+    pub id: String,
+    pub conversations: Vec<ShareGPTConversation>,
 }
 
 impl ShareGPTTextRequestGenerator {
-    pub(crate) fn new(filepath: String, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
+    pub fn new(filepath: String, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
         let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
         // load json file
         let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
@@ -211,9 +210,7 @@ impl ShareGPTTextRequestGenerator {
         }
         info!("Generated {num_requests} requests", num_requests = requests.len());
         Self {
-            conversations: data,
             current_index: Arc::from(AtomicI64::new(0)),
-            filepath,
             requests,
         }
     }
@@ -261,13 +258,13 @@ fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: u32) -
 
 
 #[derive(Debug, Clone)]
-pub(crate) struct TextGenerationAggregatedResponse {
-    pub(crate) start_time: Option<std::time::Instant>,
-    pub(crate) end_time: Option<std::time::Instant>,
-    pub(crate) num_generated_tokens: u32,
-    pub(crate) times_to_tokens: Vec<std::time::Duration>,
+pub struct TextGenerationAggregatedResponse {
+    pub start_time: Option<std::time::Instant>,
+    pub end_time: Option<std::time::Instant>,
+    pub num_generated_tokens: u32,
+    pub times_to_tokens: Vec<std::time::Duration>,
     last_received_token_time: std::time::Instant,
-    pub(crate) failed: bool,
+    pub failed: bool,
 }
 
 impl TextGenerationAggregatedResponse {
@@ -302,7 +299,7 @@ impl TextGenerationAggregatedResponse {
         self.times_to_tokens.push(time_to_generate);
     }
 
-    pub(crate) fn time_to_first_token(&self) -> Option<std::time::Duration> {
+    pub fn time_to_first_token(&self) -> Option<std::time::Duration> {
         match self.start_time {
             Some(start_time) => {
                 match self.times_to_tokens.first() {
@@ -320,7 +317,7 @@ impl TextGenerationAggregatedResponse {
         }
     }
 
-    pub(crate) fn inter_token_latency(&self) -> Option<std::time::Duration> {
+    pub fn inter_token_latency(&self) -> Option<std::time::Duration> {
         match self.times_to_tokens.len() {
             0 => {
                 None

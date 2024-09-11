@@ -6,7 +6,7 @@ use crate::results::BenchmarkErrors::NoResponses;
 use crate::scheduler::ExecutorType;
 
 #[derive(Debug)]
-enum BenchmarkErrors {
+pub(crate) enum BenchmarkErrors {
     NoResponses,
 }
 
@@ -19,15 +19,15 @@ impl Display for BenchmarkErrors {
 }
 
 #[derive(Clone)]
-pub(crate) struct BenchmarkResults {
-    pub(crate) id: String,
+pub struct BenchmarkResults {
+    pub id: String,
     aggregated_responses: Vec<TextGenerationAggregatedResponse>,
     executor_type: ExecutorType,
     executor_config: ExecutorConfig,
 }
 
 impl BenchmarkResults {
-    pub(crate) fn new(id: String, executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
+    pub fn new(id: String, executor_type: ExecutorType, executor_config: ExecutorConfig) -> BenchmarkResults {
         BenchmarkResults {
             id,
             aggregated_responses: Vec::new(),
@@ -36,20 +36,20 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn add_response(&mut self, response: TextGenerationAggregatedResponse) {
+    pub fn add_response(&mut self, response: TextGenerationAggregatedResponse) {
         self.aggregated_responses.push(response);
     }
 
-    pub(crate) fn total_requests(&self) -> usize {
+    pub fn total_requests(&self) -> usize {
         self.aggregated_responses.len()
     }
 
 
-    pub(crate) fn start_time(&self) -> Option<std::time::Instant> {
+    pub fn start_time(&self) -> Option<std::time::Instant> {
         self.aggregated_responses.first().map_or(None, |response| response.start_time)
     }
 
-    pub(crate) fn end_time(&self) -> Option<std::time::Instant> {
+    pub fn end_time(&self) -> Option<std::time::Instant> {
         self.aggregated_responses.last().map_or(None, |response| response.end_time)
     }
 
@@ -57,15 +57,15 @@ impl BenchmarkResults {
         self.start_time().is_some() && self.end_time().is_some()
     }
 
-    pub(crate) fn failed_requests(&self) -> usize {
+    pub fn failed_requests(&self) -> usize {
         self.aggregated_responses.iter().filter(|response| response.failed).count()
     }
 
-    pub(crate) fn successful_requests(&self) -> usize {
+    pub fn successful_requests(&self) -> usize {
         self.aggregated_responses.iter().filter(|response| !response.failed).count()
     }
 
-    pub(crate) fn token_throughput_secs(&self) -> anyhow::Result<f64> {
+    pub fn token_throughput_secs(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
             let total_tokens: u32 = self.total_tokens();
             Ok(total_tokens as f64 / self.duration().unwrap_or_default().as_secs_f64())
@@ -74,7 +74,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn successful_request_rate(&self) -> anyhow::Result<f64> {
+    pub fn successful_request_rate(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
             let total_requests = self.successful_requests();
             Ok(total_requests as f64 / self.duration().unwrap_or_default().as_secs_f64())
@@ -83,11 +83,11 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn total_tokens(&self) -> u32 {
+    pub fn total_tokens(&self) -> u32 {
         self.get_successful_responses().iter().map(|response| response.num_generated_tokens).sum()
     }
 
-    pub(crate) fn duration(&self) -> anyhow::Result<std::time::Duration> {
+    pub fn duration(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             Ok(self.end_time().unwrap().duration_since(self.start_time().unwrap()))
         } else {
@@ -95,7 +95,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
+    pub fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut total_time = std::time::Duration::new(0, 0);
             for response in self.get_successful_responses() {
@@ -107,7 +107,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn time_to_first_token_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
+    pub fn time_to_first_token_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).collect();
             times.sort();
@@ -121,7 +121,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn inter_token_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
+    pub fn inter_token_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut total_time = std::time::Duration::new(0, 0);
             for response in self.get_successful_responses() {
@@ -133,7 +133,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn inter_token_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
+    pub fn inter_token_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).collect();
             times.sort();
@@ -144,11 +144,11 @@ impl BenchmarkResults {
         }
     }
 
-    pub(crate) fn executor_type(&self) -> ExecutorType {
+    pub fn executor_type(&self) -> ExecutorType {
         self.executor_type.clone()
     }
 
-    pub(crate) fn executor_config(&self) -> ExecutorConfig {
+    pub fn executor_config(&self) -> ExecutorConfig {
         self.executor_config.clone()
     }
 
@@ -179,22 +179,22 @@ impl Debug for BenchmarkResults {
 
 
 #[derive(Debug, Clone)]
-pub(crate) struct BenchmarkReport {
+pub struct BenchmarkReport {
     results: Vec<BenchmarkResults>,
 }
 
 impl BenchmarkReport {
-    pub(crate) fn new() -> BenchmarkReport {
+    pub fn new() -> BenchmarkReport {
         BenchmarkReport {
             results: Vec::new(),
         }
     }
 
-    pub(crate) fn add_benchmark_result(&mut self, result: BenchmarkResults) {
+    pub fn add_benchmark_result(&mut self, result: BenchmarkResults) {
         self.results.push(result);
     }
 
-    pub(crate) fn get_results(&self) -> Vec<BenchmarkResults> {
+    pub fn get_results(&self) -> Vec<BenchmarkResults> {
         self.results.clone()
     }
 }

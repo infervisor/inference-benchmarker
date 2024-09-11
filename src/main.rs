@@ -1,12 +1,10 @@
-use text_generation_inference_benchmark::run_console;
-use std::string::ParseError;
 use std::time::Duration;
 use clap::{Error, Parser};
 use clap::error::ErrorKind::InvalidValue;
 use log::error;
 use reqwest::Url;
 use tokio::sync::broadcast;
-use text_generation_inference_benchmark::{run, BenchmarkKind};
+use text_generation_inference_benchmark::{run};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -42,13 +40,13 @@ struct Args {
 }
 
 fn parse_duration(s: &str) -> Result<Duration, Error> {
-    humantime::parse_duration(s).map_err(|e| Error::new(InvalidValue))
+    humantime::parse_duration(s).map_err(|_| Error::new(InvalidValue))
 }
 
 fn parse_url(s: &str) -> Result<String, Error> {
     match Url::parse(s) {
         Ok(_) => Ok(s.to_string()),
-        Err(e) => Err(Error::new(InvalidValue)),
+        Err(_) => Err(Error::new(InvalidValue)),
     }
 }
 
@@ -58,7 +56,7 @@ async fn main() {
 
     let interactive = !args.no_console;
 
-    let (stop_sender, stop_receiver) = broadcast::channel(1);
+    let (stop_sender, _) = broadcast::channel(1);
     // handle ctrl-c
     let stop_sender_clone = stop_sender.clone();
     tokio::spawn(async move {

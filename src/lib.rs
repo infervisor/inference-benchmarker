@@ -89,7 +89,7 @@ pub async fn run(url: String,
             } => {}
         }
     });
-    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
+    let mut benchmark = benchmark::Benchmark::new(config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();
     tokio::select! {
         results = benchmark.run() => {

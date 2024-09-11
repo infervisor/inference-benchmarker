@@ -12,24 +12,24 @@ use tokio::task::JoinHandle;
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextGenerationRequest, TextRequestGenerator};
 
 #[derive(Clone, Serialize)]
-pub(crate) struct ExecutorConfig {
-    pub(crate) max_vus: u64,
-    pub(crate) duration: Duration,
-    pub(crate) rate: Option<f64>,
+pub struct ExecutorConfig {
+    pub max_vus: u64,
+    pub duration: Duration,
+    pub rate: Option<f64>,
 }
 
 #[async_trait]
-pub(crate) trait Executor {
+pub trait Executor {
     async fn run(&self, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, stop_sender: broadcast::Sender<()>);
 }
 
-pub(crate) struct ConstantVUsExecutor {
+pub struct ConstantVUsExecutor {
     config: ExecutorConfig,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
 }
 
 impl ConstantVUsExecutor {
-    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration) -> ConstantVUsExecutor {
+    pub fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration) -> ConstantVUsExecutor {
         Self {
             backend,
             config: ExecutorConfig {
@@ -110,13 +110,13 @@ async fn start_vu(backend: Box<dyn TextGenerationBackend + Send + Sync>, request
     })
 }
 
-pub(crate) struct ConstantArrivalRateExecutor {
+pub struct ConstantArrivalRateExecutor {
     config: ExecutorConfig,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
 }
 
 impl ConstantArrivalRateExecutor {
-    pub(crate) fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration, rate: f64) -> ConstantArrivalRateExecutor {
+    pub fn new(backend: Box<dyn TextGenerationBackend + Send + Sync>, max_vus: u64, duration: Duration, rate: f64) -> ConstantArrivalRateExecutor {
         Self {
             backend,
             config: ExecutorConfig {
