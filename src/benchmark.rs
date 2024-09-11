@@ -1,11 +1,9 @@
 use std::sync::{Arc};
 use std::time::Duration;
-use clap::builder::Str;
 use log::{debug, info};
-use reqwest::Request;
 use serde::Serialize;
 use tokio::fs;
-use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
 use crate::requests::{TextGenerationBackend, TextRequestGenerator};
 use crate::{executors, scheduler};
@@ -19,13 +17,13 @@ pub enum BenchmarkKind {
     Optimum,
 }
 
-pub(crate) struct EventMessage {
+pub struct EventMessage {
     pub(crate) message: String,
     pub(crate) timestamp: chrono::DateTime<chrono::Utc>,
     pub(crate) level: log::Level,
 }
 
-pub(crate) struct BenchmarkEvent {
+pub struct BenchmarkEvent {
     pub(crate) id: String,
     pub(crate) scheduler_type: ExecutorType,
     pub(crate) request_throughput: Option<f64>,
@@ -33,7 +31,7 @@ pub(crate) struct BenchmarkEvent {
     pub(crate) results: Option<BenchmarkResults>,
 }
 
-pub(crate) enum Event {
+pub enum Event {
     BenchmarkStart(BenchmarkEvent),
     BenchmarkProgress(BenchmarkEvent),
     BenchmarkEnd(BenchmarkEvent),
@@ -103,6 +101,11 @@ impl Benchmark {
             }
         }
         self.end_time = Some(std::time::Instant::now());
+        self.event_bus.send(Event::Message(EventMessage {
+            message: format!("Benchmark complete in {:?}", self.duration().expect("duration exists")),
+            timestamp: chrono::Utc::now(),
+            level: log::Level::Info,
+        }))?;
         Ok(self.report.clone())
     }
 

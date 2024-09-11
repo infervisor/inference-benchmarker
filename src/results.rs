@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Duration;
-use serde::Serialize;
 use crate::executors::ExecutorConfig;
 use crate::requests::TextGenerationAggregatedResponse;
 use crate::results::BenchmarkErrors::NoResponses;
@@ -78,14 +77,6 @@ impl BenchmarkResults {
     pub(crate) fn successful_request_rate(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
             let total_requests = self.successful_requests();
-            Ok(total_requests as f64 / self.duration().unwrap_or_default().as_secs_f64())
-        } else {
-            Err(anyhow::anyhow!(NoResponses))
-        }
-    }
-    pub(crate) fn request_rate(&self) -> anyhow::Result<f64> {
-        if self.is_ready() {
-            let total_requests = self.total_requests();
             Ok(total_requests as f64 / self.duration().unwrap_or_default().as_secs_f64())
         } else {
             Err(anyhow::anyhow!(NoResponses))

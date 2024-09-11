@@ -1,15 +1,15 @@
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicI64};
+use std::sync::atomic::{AtomicI64};
 use std::time::Duration;
+
 use async_trait::async_trait;
-use futures_util::FutureExt;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use serde::Serialize;
+use tokio::sync::{broadcast, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedSender};
 use tokio::task::JoinHandle;
-use tokio::time::Instant;
-use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextGenerationRequest, TextGenerationResponse, TextRequestGenerator};
+
+use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextGenerationRequest, TextRequestGenerator};
 
 #[derive(Clone, Serialize)]
 pub(crate) struct ExecutorConfig {
@@ -43,7 +43,7 @@ impl ConstantVUsExecutor {
 
 #[async_trait]
 impl Executor for ConstantVUsExecutor {
-    async fn run(&self, mut requests: Arc<Mutex<dyn crate::requests::TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, stop_sender: broadcast::Sender<()>) {
+    async fn run(&self, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, stop_sender: broadcast::Sender<()>) {
         let start = std::time::Instant::now();
         // channel to handle ending VUs
         let (end_tx, mut end_rx): (Sender<bool>, Receiver<bool>) = tokio::sync::mpsc::channel(self.config.max_vus as usize);
@@ -81,7 +81,7 @@ impl Executor for ConstantVUsExecutor {
     }
 }
 
-async fn start_vu(backend: Box<dyn TextGenerationBackend + Send + Sync>, request: Arc<TextGenerationRequest>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, end_tx: Sender<bool>, mut stop_sender: broadcast::Sender<()>) -> JoinHandle<()> {
+async fn start_vu(backend: Box<dyn TextGenerationBackend + Send + Sync>, request: Arc<TextGenerationRequest>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, end_tx: Sender<bool>, stop_sender: broadcast::Sender<()>) -> JoinHandle<()> {
     let mut stop_receiver=stop_sender.subscribe();
     tokio::spawn(async move {
         tokio::select! {
@@ -130,7 +130,7 @@ impl ConstantArrivalRateExecutor {
 
 #[async_trait]
 impl Executor for ConstantArrivalRateExecutor {
-    async fn run(&self, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, mut stop_sender: broadcast::Sender<()>) {
+    async fn run(&self, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, stop_sender: broadcast::Sender<()>) {
         let start = std::time::Instant::now();
         let active_vus = Arc::new(AtomicI64::new(0));
         // channel to handle ending VUs

@@ -1,15 +1,13 @@
-use std::cmp::max;
 use std::sync::Arc;
 use std::time::Instant;
 use log::{info, trace, warn};
-use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
-use crate::requests;
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
 use crate::results::BenchmarkResults;
 use futures_util::StreamExt;
-use tokio::sync::{broadcast, Mutex, oneshot};
+use tokio::sync::{broadcast, Mutex};
 
 #[derive(Clone, strum_macros::Display)]
 pub(crate) enum ExecutorType {
@@ -27,12 +25,12 @@ pub(crate) struct Scheduler {
     stop_sender: broadcast::Sender<()>,
 }
 
-pub(crate) struct SchedulerProgress {
-    pub(crate) progress: f64,
-    pub(crate) total_requests: u64,
-    pub(crate) failed_requests: u64,
-    pub(crate) successful_requests: u64,
-    pub(crate) requests_throughput: f64,
+pub struct SchedulerProgress {
+    pub progress: f64,
+    pub total_requests: u64,
+    pub failed_requests: u64,
+    pub successful_requests: u64,
+    pub requests_throughput: f64,
 }
 
 impl Scheduler {

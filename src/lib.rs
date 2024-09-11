@@ -1,18 +1,16 @@
 use std::fs::File;
 use std::io::Write;
-use std::sync::{Arc};
+use std::sync::Arc;
+
 use chrono::Local;
-use futures_util::StreamExt;
-use log::{debug, error, info, Level, LevelFilter};
-use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use log::{error, info, LevelFilter};
+use tokio::sync::broadcast::{Sender};
 use tokio::sync::Mutex;
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use crate::benchmark::{BenchmarkReportWriter, BenchmarkResultsWriter, Event, EventMessage};
-use crate::executors::Executor;
-use crate::requests::{OpenAITextGenerationBackend, TextGenerationAggregatedResponse, TextGenerationRequest, TextGenerationResponse};
-pub use crate::benchmark::{BenchmarkKind, BenchmarkConfig};
+
 pub use crate::app::run_console;
+use crate::benchmark::{BenchmarkReportWriter, Event};
+pub use crate::benchmark::{BenchmarkConfig, BenchmarkKind};
+use crate::requests::{OpenAITextGenerationBackend};
 
 mod requests;
 mod executors;
@@ -31,7 +29,7 @@ pub async fn run(url: String,
                  benchmark_kind: String,
                  prewarm_duration: std::time::Duration,
                  interactive: bool,
-                 mut stop_sender: Sender<()>,
+                 stop_sender: Sender<()>,
 ) {
     info!("Starting benchmark");
     let filepath = "data.json".to_string();
@@ -86,7 +84,7 @@ pub async fn run(url: String,
                     run_console(config_clone, rx, stop_sender_clone).await;
                 } else {
                     // consume the channel to avoid closed channel error
-                    while let Some(event) = rx.recv().await {}
+                    while let Some(_) = rx.recv().await {}
                 }
             } => {}
         }

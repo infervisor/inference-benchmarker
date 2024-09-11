@@ -1,20 +1,15 @@
 use std::collections::HashMap;
-use std::string::ParseError;
 use std::io;
-use std::iter::Map;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
-use clap::builder::Str;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as OtherStylize, symbols::border, text::{Line, Text}, widgets::{
-    block::{Position, Title},
+    block::{Title},
     Block, Paragraph, Widget,
 }, DefaultTerminal, Frame, symbols};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Span;
-use ratatui::widgets::{Dataset, LegendPosition, List, ListItem, Row, Table};
+use ratatui::widgets::{Dataset, List, ListItem, Row, Table};
 use ratatui::widgets::ListDirection::BottomToTop;
-use strum_macros::EnumString;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
@@ -37,7 +32,7 @@ pub struct App {
 pub async fn run_console(
     benchmark_config: BenchmarkConfig,
     mut receiver: UnboundedReceiver<BenchmarkEvent>,
-    mut stop_sender: broadcast::Sender<()>,
+    stop_sender: broadcast::Sender<()>,
 ) {
     let (app_tx, app_rx) = mpsc::channel(8);
     // Create event task
@@ -54,7 +49,7 @@ pub async fn run_console(
         level: LogLevel::Info,
         timestamp: chrono::Utc::now(),
     }));
-    let mut dispatcher = app.dispatcher.clone();
+    let dispatcher = app.dispatcher.clone();
     let mut stop_receiver_signal = stop_sender.subscribe();
     let event_thread = tokio::spawn(async move {
         tokio::select! {

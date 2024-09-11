@@ -6,25 +6,12 @@ use reqwest_eventsource::{Error, Event, EventSource};
 use log::{debug, error, info, trace};
 use rand_distr::Distribution;
 use tokenizers::Tokenizer;
-use tokio::fs;
 use futures_util::StreamExt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TextGenerationRequest {
     pub prompt: String,
     pub max_tokens: u32,
-}
-
-#[derive(Debug)]
-pub(crate) struct TextGenerationResponse {
-    pub text: String,
-    pub response_type: TextGenerationResponseType,
-}
-
-#[derive(Debug)]
-pub(crate) enum TextGenerationResponseType {
-    Chunk,
-    Final,
 }
 
 #[async_trait]
@@ -135,7 +122,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             aggregated_response.add_tokens(1);
                             final_response += &*choices[0].clone().delta.unwrap().content;
                         }
-                        Some(reason) => {
+                        Some(_) => {
                             aggregated_response.add_tokens(1);
                             aggregated_response.stop();
                             let content = choices[0].clone().delta.unwrap().content;
