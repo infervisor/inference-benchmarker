@@ -14,7 +14,6 @@ pub(crate) async fn terminal_event_task(
     fps: u32,
     event_sender: mpsc::Sender<AppEvent>,
     mut shutdown_receiver: broadcast::Receiver<()>,
-    _shutdown_guard_sender: mpsc::Sender<()>,
 ) {
     // End task if a message is received on shutdown_receiver
     // _shutdown_guard_sender will be dropped once the task is finished

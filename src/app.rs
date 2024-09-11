@@ -5,7 +5,7 @@ use std::iter::Map;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use clap::builder::Str;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as OtherStylize, symbols::border, text::{Line, Text}, widgets::{
     block::{Position, Title},
     Block, Paragraph, Widget,
@@ -16,6 +16,7 @@ use ratatui::widgets::{Dataset, LegendPosition, List, ListItem, Row, Table};
 use ratatui::widgets::ListDirection::BottomToTop;
 use strum_macros::EnumString;
 use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use crate::benchmark::Event as BenchmarkEvent;
 use crate::BenchmarkConfig;
@@ -30,91 +31,108 @@ pub struct App {
     dispatcher: Arc<Mutex<Dispatcher>>,
     receiver: Receiver<AppEvent>,
     benchmark_config: BenchmarkConfig,
+    stop_sender: broadcast::Sender<()>,
 }
 
 pub async fn run_console(
     benchmark_config: BenchmarkConfig,
     mut receiver: UnboundedReceiver<BenchmarkEvent>,
+    mut stop_sender: broadcast::Sender<()>,
 ) {
-    let (shutdown_sender, _) = broadcast::channel(1);
-    let (shutdown_guard_sender, mut shutdown_guard_receiver) = mpsc::channel(1);
     let (app_tx, app_rx) = mpsc::channel(8);
     // Create event task
+    let stop_receiver_signal = stop_sender.subscribe();
     tokio::spawn(terminal_event_task(
         250,
         app_tx,
-        shutdown_sender.subscribe(),
-        shutdown_guard_sender.clone(),
+        stop_receiver_signal,
     ));
-    // Drop our end of shutdown sender
-    drop(shutdown_guard_sender);
 
-    let mut app = App::new(benchmark_config, app_rx);
+    let mut app = App::new(benchmark_config, app_rx, stop_sender.clone());
     app.dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
         message: "Starting benchmark".to_string(),
         level: LogLevel::Info,
         timestamp: chrono::Utc::now(),
     }));
     let mut dispatcher = app.dispatcher.clone();
+    let mut stop_receiver_signal = stop_sender.subscribe();
     let event_thread = tokio::spawn(async move {
-        while let Some(event) = receiver.recv().await {
-            match event {
-                BenchmarkEvent::BenchmarkStart(event) => {
-                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                        id: event.id,
-                        status: BenchmarkStatus::Running,
-                        progress: 0.0,
-                        throughput: "-".to_string(),
-                    }));
-                }
-                BenchmarkEvent::BenchmarkProgress(event) => {
-                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                        id: event.id,
-                        status: BenchmarkStatus::Running,
-                        progress: event.progress,
-                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
-                    }));
-                }
-                BenchmarkEvent::BenchmarkEnd(event) => {
-                    dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
-                        message: format!("Benchmark {} ended", event.id),
-                        level: LogLevel::Info,
-                        timestamp: chrono::Utc::now(),
-                    }));
-                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                        id: event.id,
-                        status: BenchmarkStatus::Completed,
-                        progress: 100.0,
-                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
-                    }));
-                    match event.results {
-                        Some(results) => {
-                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmarkResults(results));
+        tokio::select! {
+            _=async{
+                while let Some(event) = receiver.recv().await {
+                    match event {
+                        BenchmarkEvent::BenchmarkStart(event) => {
+                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                id: event.id,
+                                status: BenchmarkStatus::Running,
+                                progress: 0.0,
+                                throughput: "-".to_string(),
+                            }));
                         }
-                        None => {}
+                        BenchmarkEvent::BenchmarkProgress(event) => {
+                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                id: event.id,
+                                status: BenchmarkStatus::Running,
+                                progress: event.progress,
+                                throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
+                            }));
+                        }
+                        BenchmarkEvent::BenchmarkEnd(event) => {
+                            dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
+                                message: format!("Benchmark {} ended", event.id),
+                                level: LogLevel::Info,
+                                timestamp: chrono::Utc::now(),
+                            }));
+                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                id: event.id,
+                                status: BenchmarkStatus::Completed,
+                                progress: 100.0,
+                                throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
+                            }));
+                            match event.results {
+                                Some(results) => {
+                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmarkResults(results));
+                                }
+                                None => {}
+                            }
+                        }
+                        BenchmarkEvent::Message(event) => {
+                            dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
+                                message: event.message,
+                                level: LogLevel::Info,
+                                timestamp: event.timestamp,
+                            }));
+                        }
+                        BenchmarkEvent::BenchmarkReportEnd => {
+                            dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
+                                message: "Benchmark report saved.".to_string(),
+                                level: LogLevel::Info,
+                                timestamp: chrono::Utc::now(),
+                            }));
+                            break;
+                        }
                     }
                 }
-                BenchmarkEvent::Message(event) => {
-                    dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
-                        message: event.message,
-                        level: LogLevel::Info,
-                        timestamp: event.timestamp,
-                    }));
-                }
-            }
+            }=>{}
+            _ = stop_receiver_signal.recv() => {}
         }
     });
+    let mut stop_receiver_signal = stop_sender.subscribe();
     let app_thread = tokio::spawn(async move {
-        let mut terminal = ratatui::init();
-        let _ = app.run(&mut terminal).await;
-        ratatui::restore();
+        tokio::select! {
+            _ = async {
+                let _ = app.run(&mut ratatui::init()).await;
+                ratatui::restore();
+            }=>{}
+            _ = stop_receiver_signal.recv() => {}
+        }
     });
     event_thread.await.unwrap();
     app_thread.await.unwrap();
 }
 
 impl App {
-    pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>) -> App {
+    pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>, stop_sender:Sender<()>) -> App {
         let store = Arc::from(Mutex::new(Store::new()));
         let dispatcher = Arc::from(Mutex::new(Dispatcher { store: store.clone() }));
         App {
@@ -123,6 +141,7 @@ impl App {
             dispatcher: dispatcher.clone(),
             receiver,
             benchmark_config,
+            stop_sender,
         }
     }
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -130,6 +149,8 @@ impl App {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events().await?;
         }
+        // signal everybody to stop
+        let _ = self.stop_sender.send(());
         Ok(())
     }
     fn draw(&self, frame: &mut Frame) {
@@ -154,8 +175,15 @@ impl App {
         }
     }
     fn handle_key_event(&mut self, key_event: KeyEvent) -> io::Result<()> {
-        match key_event.code {
-            KeyCode::Char('q') => self.exit(),
+        match key_event {
+            KeyEvent {
+                code: KeyCode::Char('q'), ..
+            } => self.exit(),
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => self.exit(),
             _ => {}
         }
         Ok(())
@@ -249,7 +277,7 @@ impl Widget for &App {
             .border_set(border::THICK);
         List::new(
             state.messages.iter().rev().map(|m| {
-                let content=Line::from(vec![
+                let content = Line::from(vec![
                     m.formatted_timestamp().clone().gray(),
                     Span::raw(" "),
                     Span::raw(m.message.to_string()).bold(),

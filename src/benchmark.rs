@@ -5,7 +5,7 @@ use log::{debug, info};
 use reqwest::Request;
 use serde::Serialize;
 use tokio::fs;
-use tokio::sync::{mpsc, Mutex, oneshot};
+use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::{Receiver, Sender};
 use crate::requests::{TextGenerationBackend, TextRequestGenerator};
 use crate::{executors, scheduler};
@@ -38,6 +38,7 @@ pub(crate) enum Event {
     BenchmarkProgress(BenchmarkEvent),
     BenchmarkEnd(BenchmarkEvent),
     Message(EventMessage),
+    BenchmarkReportEnd
 }
 
 pub(crate) struct Benchmark {
@@ -49,6 +50,7 @@ pub(crate) struct Benchmark {
     report: BenchmarkReport,
     config: BenchmarkConfig,
     event_bus: mpsc::UnboundedSender<Event>,
+    stop_sender: broadcast::Sender<()>,
 }
 
 #[derive(Clone)]
@@ -66,7 +68,7 @@ pub struct BenchmarkProgress {
 }
 
 impl Benchmark {
-    pub(crate) fn new(id: String, config: BenchmarkConfig, backend: Box<dyn TextGenerationBackend + Send + Sync>, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, event_bus: mpsc::UnboundedSender<Event>) -> Benchmark {
+    pub(crate) fn new(id: String, config: BenchmarkConfig, backend: Box<dyn TextGenerationBackend + Send + Sync>, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, event_bus: mpsc::UnboundedSender<Event>, stop_sender: broadcast::Sender<()>) -> Benchmark {
         Benchmark {
             id,
             start_time: None,
@@ -76,6 +78,7 @@ impl Benchmark {
             backend,
             requests,
             event_bus,
+            stop_sender,
         }
     }
 
@@ -156,11 +159,11 @@ impl Benchmark {
         let tx = self.handle_progress(id.clone()).await;
 
         // start scheduler
-        let scheduler = scheduler::Scheduler::new(id, self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
+        let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: 1,
             duration: self.config.warmup_duration,
             rate: None,
-        }, self.requests.clone(), tx.clone());
+        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
         scheduler.run().await;
 
         let results = scheduler.results.lock().await.clone();
@@ -198,11 +201,11 @@ impl Benchmark {
         let tx = self.handle_progress(id.clone()).await;
 
         // start scheduler
-        let scheduler = scheduler::Scheduler::new(id.clone(), self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
+        let mut scheduler = scheduler::Scheduler::new(id.clone(), self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
             max_vus: self.config.max_vus,
             duration: self.config.duration,
             rate: None,
-        }, self.requests.clone(), tx.clone());
+        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
         scheduler.run().await;
         let results = scheduler.results.lock().await.clone();
         let rate = results.successful_request_rate().ok();
@@ -257,11 +260,11 @@ impl Benchmark {
             let tx = self.handle_progress(id.clone()).await;
 
             // start scheduler
-            let scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
+            let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
                 max_vus: self.config.max_vus,
                 duration: self.config.duration,
                 rate: Some(rate),
-            }, self.requests.clone(), tx.clone());
+            }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
             scheduler.run().await;
             let results = scheduler.results.lock().await.clone();
             self.report.add_benchmark_result(results.clone());
@@ -334,7 +337,7 @@ impl BenchmarkReportWriter {
         // write the benchmark report to json
         let mut results: Vec<BenchmarkResultsWriter> = Vec::new();
         for result in report.get_results() {
-            let writer = BenchmarkResultsWriter::new(result).unwrap();
+            let writer = BenchmarkResultsWriter::new(result)?;
             results.push(writer);
         }
         let report = serde_json::to_string(&results).unwrap();

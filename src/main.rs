@@ -3,7 +3,9 @@ use std::string::ParseError;
 use std::time::Duration;
 use clap::{Error, Parser};
 use clap::error::ErrorKind::InvalidValue;
+use log::error;
 use reqwest::Url;
+use tokio::sync::broadcast;
 use text_generation_inference_benchmark::{run, BenchmarkKind};
 
 #[derive(Parser, Debug)]
@@ -33,8 +35,8 @@ struct Args {
     #[clap(default_value = "http://localhost:8000", short, long, env)]
     #[arg(value_parser = parse_url)]
     url: String,
-    #[clap(default_value = "console", short, long, env)]
-    output: String,
+    #[clap(short, long, env)]
+    no_console: bool,
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
 }
@@ -52,10 +54,31 @@ fn parse_url(s: &str) -> Result<String, Error> {
 
 #[tokio::main]
 async fn main() {
-    // env_logger::init();
     let args = Args::parse();
 
-    let interactive = args.output == "console";
-    run(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration, interactive).await;
-    // run_console(args.url, args.tokenizer_name, args.max_vus, args.duration, args.rate, args.benchmark_kind, args.prewarm_duration);
+    let interactive = !args.no_console;
+
+    let (stop_sender, stop_receiver) = broadcast::channel(1);
+    // handle ctrl-c
+    let stop_sender_clone = stop_sender.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
+        error!("Received stop signal, stopping benchmark");
+        stop_sender_clone.send(()).expect("Failed to send stop signal");
+    });
+
+    let stop_sender_clone = stop_sender.clone();
+    let main_thread = tokio::spawn(async move {
+        run(args.url,
+            args.tokenizer_name,
+            args.max_vus,
+            args.duration,
+            args.rate,
+            args.benchmark_kind,
+            args.prewarm_duration,
+            interactive,
+            stop_sender_clone,
+        ).await;
+    });
+    main_thread.await.expect("Failed to run main thread");
 }

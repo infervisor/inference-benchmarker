@@ -3,7 +3,8 @@ use std::io::Write;
 use std::sync::{Arc};
 use chrono::Local;
 use futures_util::StreamExt;
-use log::{error, info, Level, LevelFilter};
+use log::{debug, error, info, Level, LevelFilter};
+use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -30,6 +31,7 @@ pub async fn run(url: String,
                  benchmark_kind: String,
                  prewarm_duration: std::time::Duration,
                  interactive: bool,
+                 mut stop_sender: Sender<()>,
 ) {
     info!("Starting benchmark");
     let filepath = "data.json".to_string();
@@ -37,21 +39,6 @@ pub async fn run(url: String,
     let backend = OpenAITextGenerationBackend::new("".to_string(), url);
     let requests = requests::ShareGPTTextRequestGenerator::new(filepath, tokenizer_name, 50, 10, 10, 10);
 
-    // // Throughput executor
-    // let scheduler = scheduler::Scheduler::new(Box::new(backend), scheduler::ExecutorType::Throughput, executors::ExecutorConfig {
-    //     max_vus: 1,
-    //     duration: std::time::Duration::from_secs(10),
-    //     rate: None,
-    // }, Arc::from(Mutex::from(requests)));
-    // scheduler.run().await;
-
-    // // Constant arrival rate executor
-    // let scheduler = scheduler::Scheduler::new(Box::new(backend.clone()), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
-    //     max_vus: 10,
-    //     duration: std::time::Duration::from_secs(10),
-    //     rate: Some(1),
-    // }, Arc::from(Mutex::from(requests.clone())));
-    // scheduler.run().await;
     let config = BenchmarkConfig {
         max_vus,
         duration,
@@ -64,7 +51,7 @@ pub async fn run(url: String,
         warmup_duration: prewarm_duration,
         rate,
     };
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     if interactive {
         // send logs to file
         let target = Box::new(File::create("log.txt").expect("Can't create file"));
@@ -87,27 +74,43 @@ pub async fn run(url: String,
         env_logger::init();
     }
     let config_clone = config.clone();
+    let mut stop_receiver = stop_sender.subscribe();
+    let stop_sender_clone = stop_sender.clone();
     let ui_thread = tokio::spawn(async move {
-        if interactive {
-            run_console(config_clone, rx).await;
+        tokio::select! {
+            _ = stop_receiver.recv() => {
+                error!("Received stop signal, stopping benchmark");
+            }
+            _ = async{
+                if interactive {
+                    run_console(config_clone, rx, stop_sender_clone).await;
+                } else {
+                    // consume the channel to avoid closed channel error
+                    while let Some(event) = rx.recv().await {}
+                }
+            } => {}
         }
     });
-    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone());
-    let results = match benchmark.run().await {
-        Ok(results) => results.get_results(),
-        Err(e) => {
-            error!("Error running benchmark: {:?}", e.to_string());
-            return;
+    let mut benchmark = benchmark::Benchmark::new("benchmark".to_string(), config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
+    let mut stop_receiver = stop_sender.subscribe();
+    tokio::select! {
+        results = benchmark.run() => {
+            let results = match results {
+                Ok(results) => results.get_results(),
+                Err(e) => {
+                    error!("Error running benchmark: {:?}", e.to_string());
+                    return;
+                }
+            };
+            info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].successful_request_rate().unwrap());
+            let report = benchmark.get_report();
+            let path = "results.json".to_string();
+            BenchmarkReportWriter::json(report, &path).await.unwrap();
         }
-    };
-    info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].successful_request_rate().unwrap());
-    let report = benchmark.get_report();
-    let path = "results.json".to_string();
-    BenchmarkReportWriter::json(report, &path).await.unwrap();
-    let _ = tx.send(Event::Message(EventMessage {
-        message: "Benchmark finished".to_string(),
-        timestamp: chrono::Utc::now(),
-        level: Level::Info,
-    }));
+        _ = stop_receiver.recv() => {
+            error!("Received stop signal, stopping benchmark");
+        }
+    }
+    let _ = tx.send(Event::BenchmarkReportEnd);
     ui_thread.await.unwrap();
 }

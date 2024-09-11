@@ -296,7 +296,7 @@ impl TextGenerationAggregatedResponse {
     }
     fn start(&mut self) {
         self.start_time = Some(std::time::Instant::now());
-        self.last_received_token_time = self.start_time.unwrap().clone();
+        self.last_received_token_time = std::time::Instant::now();
     }
 
     fn stop(&mut self) {

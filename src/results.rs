@@ -121,6 +121,9 @@ impl BenchmarkResults {
             let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).collect();
             times.sort();
             let index = (percentile * times.len() as f64) as usize;
+            if index >= times.len() {
+                return Err(anyhow::anyhow!(NoResponses));
+            }
             Ok(times[index])
         } else {
             Err(anyhow::anyhow!(NoResponses))
