@@ -186,7 +186,7 @@ impl ShareGPTTextRequestGenerator {
         let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
         let data: Vec<ShareGPTEntry> = serde_json::from_str(&input).expect("Unable to parse input file");
         // generate requests
-        let mut requests: Arc<Mutex<Vec<TextGenerationRequest>>> = Arc::from(Mutex::from(Vec::new()));
+        let requests: Arc<Mutex<Vec<TextGenerationRequest>>> = Arc::from(Mutex::from(Vec::new()));
         info!("Generating requests from {filepath}", filepath = filepath.display().to_string());
         let bar = ProgressBar::new(data.len() as u64);
         bar.set_style(ProgressStyle::with_template("Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
