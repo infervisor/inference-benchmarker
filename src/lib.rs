@@ -110,7 +110,7 @@ pub async fn run(url: String,
                 Ok(results) => {
                     info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
-                    let path = "results.json".to_string();
+                    let path = "results/results.json".to_string();
                     BenchmarkReportWriter::json(report, &path).await.unwrap();
                 },
                 Err(e) => {
