@@ -46,6 +46,7 @@ impl Clone for Box<dyn TextGenerationBackend + Send + Sync> {
 pub struct OpenAITextGenerationBackend {
     pub api_key: String,
     pub base_url: String,
+    pub model_name: String
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -72,10 +73,11 @@ pub struct OpenAITextGenerationResponse {
 }
 
 impl OpenAITextGenerationBackend {
-    pub fn new(api_key: String, base_url: String) -> Self {
+    pub fn new(api_key: String, base_url: String, model_name: String) -> Self {
         Self {
             api_key,
             base_url,
+            model_name,
         }
     }
 }
@@ -89,7 +91,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
         let req = reqwest::Client::new().post(url)
             .header("Authorization", format!("Bearer {token}", token = self.api_key))
             .json(&serde_json::json!({
-                "model": "gpt-3.5-turbo",
+                "model": self.model_name,
                 "messages": [
                     {
                         "role": "system",

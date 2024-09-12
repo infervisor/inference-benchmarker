@@ -276,11 +276,13 @@ impl Benchmark {
         // run a throughput benchmark to retrieve the maximum throughput of server
         self.run_throughput().await?;
         // get the max throughput from the second benchmark result (first is warmup)
-        let max_throughput = self.report.get_results()[1].successful_request_rate()?;
+        let throughput_results = &self.report.get_results()[1];
+        let max_throughput = throughput_results.successful_request_rate()?;
+        let max_tokens_throughput = throughput_results.token_throughput_secs()?;
         // run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
         // notify event bus
         self.event_bus.send(Event::Message(MessageEvent {
-            message: format!("Max throughput detected at: {:.2} req/s", max_throughput),
+            message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;

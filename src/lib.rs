@@ -35,7 +35,7 @@ pub async fn run(url: String,
 ) -> anyhow::Result<()> {
     info!("Starting benchmark");
     // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
-    let backend = OpenAITextGenerationBackend::new("".to_string(), url);
+    let backend = OpenAITextGenerationBackend::new("".to_string(), url, tokenizer_name.clone());
 
     let config = BenchmarkConfig {
         max_vus,
