@@ -16,6 +16,7 @@ jobs:
       group: aws-general-8-plus
     permissions:
       packages: write
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
