@@ -14,10 +14,10 @@ use crate::scheduler::{ExecutorType, SchedulerProgress};
 pub enum BenchmarkKind {
     Throughput,
     Sweep,
-    Optimum,
+    Rate,
 }
 
-pub struct EventMessage {
+pub struct MessageEvent {
     pub message: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub level: log::Level,
@@ -29,14 +29,17 @@ pub struct BenchmarkEvent {
     pub request_throughput: Option<f64>,
     pub progress: f64,
     pub results: Option<BenchmarkResults>,
+    pub successful_requests: u64,
+    pub failed_requests: u64,
 }
 
 pub enum Event {
     BenchmarkStart(BenchmarkEvent),
     BenchmarkProgress(BenchmarkEvent),
     BenchmarkEnd(BenchmarkEvent),
-    Message(EventMessage),
-    BenchmarkReportEnd
+    Message(MessageEvent),
+    BenchmarkReportEnd,
+    BenchmarkError(String),
 }
 
 pub struct Benchmark {
@@ -57,6 +60,39 @@ pub struct BenchmarkConfig {
     pub benchmark_kind: BenchmarkKind,
     pub warmup_duration: Duration,
     pub rate: Option<f64>,
+    pub num_rates: u64,
+}
+
+impl BenchmarkConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.max_vus <= 0 {
+            return Err(anyhow::anyhow!("max_vus must be greater than 0"));
+        }
+        if self.duration.as_secs() <= 0 {
+            return Err(anyhow::anyhow!("duration must be greater than 0"));
+        }
+        if self.warmup_duration.as_secs() <= 0 {
+            return Err(anyhow::anyhow!("warmup_duration must be greater than 0"));
+        }
+        match self.benchmark_kind {
+            BenchmarkKind::Throughput => {
+                if self.rate.is_some() {
+                    return Err(anyhow::anyhow!("rate must not be specified for throughput benchmark"));
+                }
+            }
+            BenchmarkKind::Sweep => {
+                if self.rate.is_some() {
+                    return Err(anyhow::anyhow!("rate must not be specified for sweep benchmark"));
+                }
+            }
+            BenchmarkKind::Rate => {
+                if self.rate.is_none() {
+                    return Err(anyhow::anyhow!("rate must be specified for sweep benchmark"));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct BenchmarkProgress {
@@ -94,12 +130,12 @@ impl Benchmark {
             BenchmarkKind::Sweep => {
                 self.run_sweep().await?;
             }
-            BenchmarkKind::Optimum => {
-                todo!()
+            BenchmarkKind::Rate => {
+                self.run_rate(self.config.rate.expect("config already validated")).await?;
             }
         }
         self.end_time = Some(std::time::Instant::now());
-        self.event_bus.send(Event::Message(EventMessage {
+        self.event_bus.send(Event::Message(MessageEvent {
             message: format!("Benchmark complete in {:?}", self.duration().expect("duration exists")),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
@@ -133,8 +169,10 @@ impl Benchmark {
                             scheduler_type: ExecutorType::ConstantVUs,
                             request_throughput: Some(progress_evt.progress.requests_throughput),
                             progress: progress_evt.progress.progress,
+                            successful_requests: progress_evt.progress.successful_requests,
+                            failed_requests: progress_evt.progress.failed_requests,
                             results: None,
-                        })).unwrap();
+                        })).unwrap(); //FIXME remove unwrap
                     }
                 }
             }
@@ -154,6 +192,8 @@ impl Benchmark {
             request_throughput: None,
             progress: 0.0,
             results: None,
+            successful_requests: 0,
+            failed_requests: 0,
         }))?;
 
         // create progress handler
@@ -180,6 +220,8 @@ impl Benchmark {
             request_throughput: results.successful_request_rate().ok(),
             progress: 100.0,
             results: None,
+            successful_requests: results.successful_requests() as u64,
+            failed_requests: results.failed_requests() as u64,
         }))?;
         Ok(())
     }
@@ -196,6 +238,8 @@ impl Benchmark {
             request_throughput: None,
             progress: 0.0,
             results: None,
+            successful_requests: 0,
+            failed_requests: 0,
         }))?;
 
         // create progress handler
@@ -222,6 +266,8 @@ impl Benchmark {
             request_throughput: rate,
             progress: 100.0,
             results: Some(results.clone()),
+            successful_requests: results.successful_requests() as u64,
+            failed_requests: results.failed_requests() as u64,
         }))?;
         Ok(())
     }
@@ -233,55 +279,64 @@ impl Benchmark {
         let max_throughput = self.report.get_results()[1].successful_request_rate()?;
         // run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
         // notify event bus
-        self.event_bus.send(Event::Message(EventMessage {
+        self.event_bus.send(Event::Message(MessageEvent {
             message: format!("Max throughput detected at: {:.2} req/s", max_throughput),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;
         let mut rates = Vec::new();
-        let num_rates = 5;
+        let num_rates = self.config.num_rates;
         for i in 1..=num_rates {
             rates.push(i as f64 * max_throughput / num_rates as f64);
         }
         for rate in rates {
-            debug!("Running sweep benchmark with rate: {} req/s", rate);
-
-            let id = format!("constant@{:.2}req/s", rate);
-
-            // notify start event
-            self.event_bus.send(Event::BenchmarkStart(BenchmarkEvent {
-                id: id.clone(),
-                scheduler_type: ExecutorType::ConstantArrivalRate,
-                request_throughput: None,
-                progress: 0.0,
-                results: None,
-            }))?;
-
-            // create progress handler
-            let tx = self.handle_progress(id.clone()).await;
-
-            // start scheduler
-            let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
-                max_vus: self.config.max_vus,
-                duration: self.config.duration,
-                rate: Some(rate),
-            }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
-            scheduler.run().await?;
-            let results = scheduler.get_results().lock().await.clone();
-            self.report.add_benchmark_result(results.clone());
-
-            // send None to close the progress handler
-            tx.send(None).await.unwrap();
-
-            // notify end event
-            self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
-                id: format!("constant@{:.2}req/s", rate),
-                scheduler_type: ExecutorType::ConstantArrivalRate,
-                request_throughput: results.successful_request_rate().ok(),
-                progress: 100.0,
-                results: Some(results.clone()),
-            }))?;
+            self.run_rate(rate).await?;
         }
+        Ok(())
+    }
+
+    pub async fn run_rate(&mut self, rate: f64) -> anyhow::Result<()> {
+        debug!("Running benchmark with rate: {} req/s", rate);
+
+        let id = format!("constant@{:.2}req/s", rate);
+
+        // notify start event
+        self.event_bus.send(Event::BenchmarkStart(BenchmarkEvent {
+            id: id.clone(),
+            scheduler_type: ExecutorType::ConstantArrivalRate,
+            request_throughput: None,
+            progress: 0.0,
+            results: None,
+            successful_requests: 0,
+            failed_requests: 0,
+        }))?;
+
+        // create progress handler
+        let tx = self.handle_progress(id.clone()).await;
+
+        // start scheduler
+        let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
+            max_vus: self.config.max_vus,
+            duration: self.config.duration,
+            rate: Some(rate),
+        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
+        scheduler.run().await?;
+        let results = scheduler.get_results().lock().await.clone();
+        self.report.add_benchmark_result(results.clone());
+
+        // send None to close the progress handler
+        tx.send(None).await.unwrap();
+
+        // notify end event
+        self.event_bus.send(Event::BenchmarkEnd(BenchmarkEvent {
+            id: format!("constant@{:.2}req/s", rate),
+            scheduler_type: ExecutorType::ConstantArrivalRate,
+            request_throughput: results.successful_request_rate().ok(),
+            progress: 100.0,
+            results: Some(results.clone()),
+            successful_requests: results.successful_requests() as u64,
+            failed_requests: results.failed_requests() as u64,
+        }))?;
         Ok(())
     }
 }

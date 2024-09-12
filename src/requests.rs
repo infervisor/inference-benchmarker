@@ -1,5 +1,6 @@
+use std::path::PathBuf;
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicI64;
 use tokio::sync::mpsc::Sender;
 use reqwest_eventsource::{Error, Event, EventSource};
@@ -7,6 +8,10 @@ use log::{debug, error, info, trace};
 use rand_distr::Distribution;
 use tokenizers::Tokenizer;
 use futures_util::StreamExt;
+use hf_hub::api::sync::Api;
+use indicatif::{ProgressBar, ProgressStyle};
+use rayon::iter::split;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -173,47 +178,72 @@ pub struct ShareGPTEntry {
 }
 
 impl ShareGPTTextRequestGenerator {
-    pub fn new(filepath: String, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
+    pub fn new(filepath: PathBuf, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
         let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
         // load json file
         let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
         let data: Vec<ShareGPTEntry> = serde_json::from_str(&input).expect("Unable to parse input file");
         // generate requests
-        let mut requests = Vec::new();
-        info!("Generating requests from {filepath}", filepath = filepath);
-        for entry in data.iter() {
-            if entry.conversations.len() == 0 {
-                continue;
-            }
-            let prompt = entry.conversations[0].value.clone();
-            // compute number of tokens to generate using a Gaussian distribution
-            let normal = rand_distr::Normal::new(prompt_tokens as f64, variance as f64).unwrap();
-            let mut num_tokens = normal.sample(&mut rand::thread_rng()) as u32;
-            if num_tokens < min_tokens {
-                num_tokens = min_tokens;
-            }
-            if num_tokens > max_tokens {
-                num_tokens = max_tokens;
-            }
-            let sampled_prompt = match tokenize_prompt(prompt, tokenizer.clone(), num_tokens) {
-                Ok(prompt) => prompt,
-                Err(e) => {
-                    debug!("Error tokenizing prompt: {e}");
+        let mut requests: Arc<Mutex<Vec<TextGenerationRequest>>> = Arc::from(Mutex::from(Vec::new()));
+        info!("Generating requests from {filepath}", filepath = filepath.display().to_string());
+        let bar = ProgressBar::new(data.len() as u64);
+        bar.set_style(ProgressStyle::with_template("Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .unwrap());
+        split(data, entry_splitter).for_each(|subrange| {
+            for entry in subrange {
+                bar.inc(1);
+                if entry.conversations.len() == 0 {
                     continue;
                 }
-            };
-            requests.push(TextGenerationRequest {
-                prompt: sampled_prompt,
-                max_tokens,
-            });
-            // TODO: check that we have enough requests
-        }
+                let prompt = entry.conversations[0].value.clone();
+                // compute number of tokens to generate using a Gaussian distribution
+                let normal = rand_distr::Normal::new(prompt_tokens as f64, variance as f64).unwrap();
+                let mut num_tokens = normal.sample(&mut rand::thread_rng()) as u32;
+                if num_tokens < min_tokens {
+                    num_tokens = min_tokens;
+                }
+                if num_tokens > max_tokens {
+                    num_tokens = max_tokens;
+                }
+                let sampled_prompt = match tokenize_prompt(prompt, tokenizer.clone(), num_tokens) {
+                    Ok(prompt) => prompt,
+                    Err(e) => {
+                        debug!("Error tokenizing prompt: {e}");
+                        continue;
+                    }
+                };
+                requests.lock().unwrap().push(TextGenerationRequest {
+                    prompt: sampled_prompt,
+                    max_tokens,
+                });
+                // TODO: check that we have enough requests
+            }
+        });
+        let requests = requests.lock().unwrap();
         info!("Generated {num_requests} requests", num_requests = requests.len());
         Self {
             current_index: Arc::from(AtomicI64::new(0)),
-            requests,
+            requests: requests.to_vec(),
         }
     }
+
+    pub fn download_dataset(repo_name: String, filename: String) -> anyhow::Result<PathBuf> {
+        let api = Api::new().unwrap();
+        let repo = api.dataset(repo_name);
+        let dataset = repo.get(&filename)?;
+        Ok(dataset)
+    }
+}
+
+fn entry_splitter(gen: Vec<ShareGPTEntry>) -> (Vec<ShareGPTEntry>, Option<Vec<ShareGPTEntry>>) {
+    if gen.len() <= 2 {
+        return (gen, None);
+    }
+    let middle = gen.len() / 2;
+    let (left, right) = gen.split_at(middle);
+    let left = left.to_vec();
+    let right = right.to_vec();
+    (left, Some(right))
 }
 
 impl TextRequestGenerator for ShareGPTTextRequestGenerator {

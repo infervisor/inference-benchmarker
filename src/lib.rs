@@ -3,12 +3,12 @@ use std::io::Write;
 use std::sync::Arc;
 
 use chrono::Local;
-use log::{error, info, LevelFilter};
+use log::{error, info, Level, LevelFilter};
 use tokio::sync::broadcast::{Sender};
 use tokio::sync::Mutex;
 
 pub use crate::app::run_console;
-use crate::benchmark::{BenchmarkReportWriter, Event};
+use crate::benchmark::{BenchmarkReportWriter, Event, MessageEvent};
 pub use crate::benchmark::{BenchmarkConfig, BenchmarkKind};
 use crate::requests::{OpenAITextGenerationBackend};
 
@@ -20,35 +20,37 @@ mod results;
 mod benchmark;
 mod app;
 mod event;
+mod flux;
 
 pub async fn run(url: String,
                  tokenizer_name: String,
                  max_vus: u64,
                  duration: std::time::Duration,
                  rate: Option<f64>,
+                 num_rates: u64,
                  benchmark_kind: String,
                  prewarm_duration: std::time::Duration,
                  interactive: bool,
                  stop_sender: Sender<()>,
-) {
+) -> anyhow::Result<()> {
     info!("Starting benchmark");
-    let filepath = "data.json".to_string();
     // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
     let backend = OpenAITextGenerationBackend::new("".to_string(), url);
-    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, tokenizer_name, 50, 10, 10, 10);
 
     let config = BenchmarkConfig {
         max_vus,
         duration,
-        benchmark_kind: match benchmark_kind.as_str() {
-            "Throughput" => BenchmarkKind::Throughput,
-            "Sweep" => BenchmarkKind::Sweep,
-            "Optimum" => BenchmarkKind::Optimum,
+        benchmark_kind: match benchmark_kind.to_lowercase().as_str() {
+            "throughput" => BenchmarkKind::Throughput,
+            "sweep" => BenchmarkKind::Sweep,
+            "rate" => BenchmarkKind::Rate,
             _ => BenchmarkKind::Sweep,
         },
         warmup_duration: prewarm_duration,
         rate,
+        num_rates,
     };
+    config.validate()?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     if interactive {
         // send logs to file
@@ -89,21 +91,33 @@ pub async fn run(url: String,
             } => {}
         }
     });
+
+    // download prompts dataset
+    info!("Downloading dataset");
+    let _ = tx.send(Event::Message(MessageEvent{
+        message: "Downloading dataset".to_string(),
+        timestamp: chrono::Utc::now(),
+        level: Level::Info,
+    }));
+    let filepath = requests::ShareGPTTextRequestGenerator::download_dataset("hlarcher/share_gpt_small".to_string(), "share_gpt_filtered_small.json".to_string()).expect("Can't download dataset");
+    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, tokenizer_name, 50, 10, 10, 10);
+
     let mut benchmark = benchmark::Benchmark::new(config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();
     tokio::select! {
-        results = benchmark.run() => {
-            let results = match results {
-                Ok(results) => results.get_results(),
+        report = benchmark.run() => {
+            match report {
+                Ok(results) => {
+                    info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
+                    let report = benchmark.get_report();
+                    let path = "results.json".to_string();
+                    BenchmarkReportWriter::json(report, &path).await.unwrap();
+                },
                 Err(e) => {
                     error!("Error running benchmark: {:?}", e.to_string());
-                    return;
+                    let _ = tx.send(Event::BenchmarkError(e.to_string()));
                 }
             };
-            info!("Throughput is {requests_throughput} req/s",requests_throughput = results[0].successful_request_rate().unwrap());
-            let report = benchmark.get_report();
-            let path = "results.json".to_string();
-            BenchmarkReportWriter::json(report, &path).await.unwrap();
         }
         _ = stop_receiver.recv() => {
             error!("Received stop signal, stopping benchmark");
@@ -111,4 +125,5 @@ pub async fn run(url: String,
     }
     let _ = tx.send(Event::BenchmarkReportEnd);
     ui_thread.await.unwrap();
+    Ok(())
 }

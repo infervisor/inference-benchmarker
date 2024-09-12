@@ -28,6 +28,8 @@ pub struct Scheduler {
 pub struct SchedulerProgress {
     pub progress: f64,
     pub requests_throughput: f64,
+    pub successful_requests: u64,
+    pub failed_requests: u64,
 }
 
 impl Scheduler {
@@ -94,6 +96,8 @@ impl Scheduler {
                             let _ = progress_tx.send(Some(SchedulerProgress {
                                 progress: (100.0 * (1.0 - (expected_duration - start_time.elapsed().as_secs_f64()) / expected_duration)).min(100.0),
                                 requests_throughput: result.successful_request_rate().unwrap_or_default(),
+                                successful_requests: result.successful_requests() as u64,
+                                failed_requests: result.failed_requests() as u64,
                             })).await;
                         }
                     }).await;

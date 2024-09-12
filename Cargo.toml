@@ -24,7 +24,9 @@ tokio-stream = "0.1.16"
 strum_macros = "0.26.4"
 clap = { version = "4.5.17", features = ["derive","env"] }
 humantime = "2.1.0"
-clap-verbosity-flag = "2.2.1"
 ratatui = { version = "0.28.1", features = ["all-widgets"] }
 crossterm = "0.28.1"
 chrono = "0.4.38"
+hf-hub = { version = "0.3.2", features = ["tokio"] }
+indicatif = "0.17.8"
+rayon = "1.10.0"

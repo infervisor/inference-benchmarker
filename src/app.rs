@@ -8,7 +8,7 @@ use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as Other
 }, DefaultTerminal, Frame, symbols};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Span;
-use ratatui::widgets::{Dataset, List, ListItem, Row, Table};
+use ratatui::widgets::{Cell, Dataset, List, ListItem, Row, Table};
 use ratatui::widgets::ListDirection::BottomToTop;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::Sender;
@@ -16,7 +16,7 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
 use crate::benchmark::Event as BenchmarkEvent;
 use crate::BenchmarkConfig;
 use crate::event::{AppEvent, terminal_event_task};
-use crate::results::BenchmarkResults;
+use crate::flux::{Action, AppState, Dispatcher, Store};
 use crate::scheduler::ExecutorType;
 
 
@@ -61,26 +61,21 @@ pub async fn run_console(
                                 id: event.id,
                                 status: BenchmarkStatus::Running,
                                 progress: 0.0,
-                                throughput: "-".to_string(),
+                                throughput: "0".to_string(),
                                 successful_requests: 0,
                                 failed_requests: 0,
                             }));
                         }
                         BenchmarkEvent::BenchmarkProgress(event) => {
-                            match event.results {
-                                Some(results)=>{
-                                    let (successful_requests,failed_requests) = (results.successful_requests() as u64,results.failed_requests() as u64);
-                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                                        id: event.id,
-                                        status: BenchmarkStatus::Running,
-                                        progress: event.progress,
-                                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
-                                        successful_requests,
-                                        failed_requests,
-                                    }));
-                                }
-                                None=>{}
-                            }
+                            let (successful_requests,failed_requests) = (event.successful_requests,event.failed_requests);
+                            dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                id: event.id,
+                                status: BenchmarkStatus::Running,
+                                progress: event.progress,
+                                throughput: event.request_throughput.map_or("0".to_string(), |e| format!("{e:.2}")),
+                                successful_requests,
+                                failed_requests,
+                            }));
                         }
                         BenchmarkEvent::BenchmarkEnd(event) => {
                             dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
@@ -95,7 +90,7 @@ pub async fn run_console(
                                         id: event.id,
                                         status: BenchmarkStatus::Completed,
                                         progress: 100.0,
-                                        throughput: event.request_throughput.map_or("-".to_string(), |e| format!("{e:.2}")),
+                                        throughput: event.request_throughput.map_or("0".to_string(), |e| format!("{e:.2}")),
                                         successful_requests,
                                         failed_requests,
                                     }));
@@ -115,6 +110,14 @@ pub async fn run_console(
                             dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
                                 message: "Benchmark report saved.".to_string(),
                                 level: LogLevel::Info,
+                                timestamp: chrono::Utc::now(),
+                            }));
+                            break;
+                        }
+                        BenchmarkEvent::BenchmarkError(event) => {
+                            dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
+                                message: format!("Error running benchmark: {:?}", event),
+                                level: LogLevel::Error,
                                 timestamp: chrono::Utc::now(),
                             }));
                             break;
@@ -142,7 +145,7 @@ pub async fn run_console(
 impl App {
     pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>, stop_sender: Sender<()>) -> App {
         let store = Arc::from(Mutex::new(Store::new()));
-        let dispatcher = Arc::from(Mutex::new(Dispatcher { store: store.clone() }));
+        let dispatcher = Arc::from(Mutex::new(Dispatcher::new(store.clone())));
         App {
             exit: false,
             store: store.clone(),
@@ -279,9 +282,9 @@ impl Widget for &App {
         List::new(
             state.messages.iter().rev().map(|m| {
                 let level_span = match m.level {
-                    LogLevel::Info => Span::raw(m.level.to_string()).green().bold(),
-                    LogLevel::Warning => Span::raw(m.level.to_string()).yellow().bold(),
-                    LogLevel::Error => Span::raw(m.level.to_string()).red().bold(),
+                    LogLevel::Info => Span::raw(m.level.to_string().to_uppercase()).green().bold(),
+                    LogLevel::Warning => Span::raw(m.level.to_string().to_uppercase()).yellow().bold(),
+                    LogLevel::Error => Span::raw(m.level.to_string().to_uppercase()).red().bold(),
                 };
                 let content = Line::from(vec![
                     m.formatted_timestamp().clone().gray(),
@@ -314,12 +317,17 @@ impl Widget for &App {
             .title(steps_block_title.alignment(Alignment::Center))
             .border_set(border::THICK);
         let step_rows = state.benchmarks.iter().map(|b| {
+            let error_rate = if b.failed_requests > 0 {
+                format!("{:4.0}%", b.failed_requests as f64 / (b.failed_requests + b.successful_requests) as f64 * 100.).light_red().bold()
+            } else {
+                format!("{:4.0}%", 0).to_string().white()
+            };
             let cells = vec![
                 b.id.clone().white(),
                 b.status.to_string().white(),
                 format!("{:4.0}%", b.progress).white(),
+                error_rate,
                 format!("{:>6.6} req/sec avg", b.throughput).green().bold(),
-                format!("{}|{}",b.successful_requests, b.failed_requests).green().bold(),
             ];
             Row::new(cells)
         }).collect::<Vec<_>>();
@@ -327,10 +335,18 @@ impl Widget for &App {
             Constraint::Length(30),
             Constraint::Length(10),
             Constraint::Length(5),
+            Constraint::Length(5),
             Constraint::Length(20),
         ];
         // steps table
         Table::new(step_rows, widths)
+            .header(Row::new(vec![
+                Cell::new(Line::from("Bench").alignment(Alignment::Left)),
+                Cell::new(Line::from("Status").alignment(Alignment::Left)),
+                Cell::new(Line::from("%").alignment(Alignment::Left)),
+                Cell::new(Line::from("Err").alignment(Alignment::Left)),
+                Cell::new(Line::from("Throughput").alignment(Alignment::Left)),
+            ]))
             .block(steps_block)
             .render(steps_graph_layout[0], buf);
 
@@ -380,87 +396,6 @@ fn get_axis_labels(min: f64, max: f64, num_labels: u32) -> Vec<String> {
 }
 
 
-// Flux pattern
-#[derive(Clone)]
-struct Dispatcher {
-    store: Arc<Mutex<Store>>,
-}
-
-impl Dispatcher {
-    fn dispatch(&mut self, action: Action) {
-        let _ = self.store.lock().unwrap().update(action);
-    }
-}
-
-#[derive(Clone)]
-struct AppState {
-    messages: Vec<LogMessageUI>,
-    benchmarks: Vec<BenchmarkUI>,
-    results: Vec<BenchmarkResults>,
-}
-
-impl AppState {
-    fn new() -> Self {
-        Self {
-            messages: Vec::new(),
-            benchmarks: Vec::new(),
-            results: Vec::new(),
-        }
-    }
-}
-
-struct Store {
-    state: AppState,
-}
-
-impl Store {
-    fn new() -> Self {
-        let state = AppState::new();
-        Self {
-            state,
-        }
-    }
-
-    fn update(&mut self, action: Action) {
-        match action {
-            Action::LogMessage(message) => self.state.messages.push(message),
-            Action::AddBenchmark(benchmark) => {
-                // add or update benchmark
-                let index = self.state.benchmarks.iter().position(|b| b.id == benchmark.id);
-                match index {
-                    Some(i) => {
-                        self.state.benchmarks[i] = benchmark;
-                    }
-                    None => {
-                        self.state.benchmarks.push(benchmark);
-                    }
-                }
-            }
-            Action::AddBenchmarkResults(results) => {
-                let index = self.state.results.iter_mut().position(|b| b.id == results.id);
-                match index {
-                    Some(i) => {
-                        self.state.results[i] = results;
-                    }
-                    None => {
-                        self.state.results.push(results);
-                    }
-                }
-            }
-        }
-    }
-
-    fn get_state(&self) -> AppState {
-        self.state.clone()
-    }
-}
-
-enum Action {
-    LogMessage(LogMessageUI),
-    AddBenchmark(BenchmarkUI),
-    AddBenchmarkResults(BenchmarkResults),
-}
-
 #[allow(dead_code)]
 #[derive(Clone, strum_macros::Display)]
 enum LogLevel {
@@ -470,7 +405,7 @@ enum LogLevel {
 }
 
 #[derive(Clone)]
-struct LogMessageUI {
+pub(crate) struct LogMessageUI {
     message: String,
     level: LogLevel,
     timestamp: chrono::DateTime<chrono::Utc>,
@@ -483,8 +418,8 @@ impl LogMessageUI {
 }
 
 #[derive(Clone)]
-struct BenchmarkUI {
-    id: String,
+pub(crate) struct BenchmarkUI {
+    pub(crate) id: String,
     status: BenchmarkStatus,
     progress: f64,
     throughput: String,
