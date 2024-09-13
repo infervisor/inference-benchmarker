@@ -6,7 +6,7 @@ use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
 use tokio::fs;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
-use crate::requests::{TextGenerationBackend, TextRequestGenerator};
+use crate::requests::{TextGenerationBackend, TextRequestGenerator, TokenizeOptions};
 use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
 use crate::scheduler::{ExecutorType, SchedulerProgress};
@@ -67,9 +67,8 @@ pub struct BenchmarkConfig {
     pub warmup_duration: Duration,
     pub rate: Option<f64>,
     pub num_rates: u64,
-    pub prompt_length: u64,
-    pub prompt_variance: u64,
-    pub decode_length: u64,
+    pub prompt_options: Option<TokenizeOptions>,
+    pub decode_options: Option<TokenizeOptions>,
 }
 
 impl BenchmarkConfig {
