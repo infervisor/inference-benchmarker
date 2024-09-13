@@ -11,9 +11,12 @@ use tokio::task::JoinHandle;
 
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextGenerationRequest, TextRequestGenerator};
 
+#[serde_with::serde_as]
 #[derive(Clone, Serialize)]
 pub struct ExecutorConfig {
     pub max_vus: u64,
+    #[serde(rename = "duration_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub duration: Duration,
     pub rate: Option<f64>,
 }

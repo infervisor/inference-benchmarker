@@ -30,3 +30,5 @@ chrono = "0.4.38"
 hf-hub = { version = "0.3.2", features = ["tokio"] }
 indicatif = "0.17.8"
 rayon = "1.10.0"
+serde_with = "3.9.0"
+sysinfo = "0.31.4"

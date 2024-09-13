@@ -2,6 +2,7 @@ use std::sync::{Arc};
 use std::time::Duration;
 use log::{debug, info};
 use serde::Serialize;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
 use tokio::fs;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -10,7 +11,7 @@ use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
 use crate::scheduler::{ExecutorType, SchedulerProgress};
 
-#[derive(Clone, Debug, strum_macros::Display)]
+#[derive(Clone, Debug, strum_macros::Display, Serialize)]
 pub enum BenchmarkKind {
     Throughput,
     Sweep,
@@ -53,14 +54,22 @@ pub struct Benchmark {
     stop_sender: broadcast::Sender<()>,
 }
 
-#[derive(Clone)]
+#[serde_with::serde_as]
+#[derive(Clone, Serialize)]
 pub struct BenchmarkConfig {
     pub max_vus: u64,
+    #[serde(rename = "duration_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub duration: Duration,
     pub benchmark_kind: BenchmarkKind,
+    #[serde(rename = "warmup_duration_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub warmup_duration: Duration,
     pub rate: Option<f64>,
     pub num_rates: u64,
+    pub prompt_length: u64,
+    pub prompt_variance: u64,
+    pub decode_length: u64,
 }
 
 impl BenchmarkConfig {
@@ -120,6 +129,7 @@ impl Benchmark {
 
     pub async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
         self.start_time = Some(std::time::Instant::now());
+        self.report.start();
         info!("Prewarming backend");
         self.warmup().await?;
         info!("Prewarm complete");
@@ -140,6 +150,7 @@ impl Benchmark {
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;
+        self.report.end();
         Ok(self.report.clone())
     }
 
@@ -362,6 +373,7 @@ pub struct BenchmarkResultsWriter {
     failed_requests: u64,
     successful_requests: u64,
     request_rate: f64,
+    total_tokens_sent: u64,
 }
 
 impl BenchmarkResultsWriter {
@@ -383,24 +395,74 @@ impl BenchmarkResultsWriter {
             failed_requests: results.failed_requests() as u64,
             successful_requests: results.successful_requests() as u64,
             request_rate: results.successful_request_rate()?,
+            total_tokens_sent: results.total_tokens_sent(),
         })
     }
 }
 
-pub struct BenchmarkReportWriter {}
+#[derive(Serialize)]
+pub struct SystemInfo {
+    pub cpu: Vec<String>,
+    pub memory: String,
+    pub os_name: String,
+    pub os_version: String,
+    pub kernel: String,
+    pub hostname: String,
+}
+
+impl SystemInfo {
+    pub fn new() -> SystemInfo {
+        let s = System::new_with_specifics(
+            sysinfo::RefreshKind::new()
+                .with_memory(MemoryRefreshKind::everything())
+                .with_cpu(CpuRefreshKind::everything())
+        );
+        let cpu_info = s.cpus().iter().map(|cpu| format!("{} {}@{:.0}MHz", cpu.brand(), cpu.name(), cpu.frequency())).collect::<Vec<String>>();
+        SystemInfo {
+            cpu: cpu_info,
+            memory: format!("{:.2} GB", s.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0),
+            os_name: System::name().ok_or("N/A").unwrap(),
+            os_version: System::os_version().ok_or("N/A").unwrap(),
+            kernel: System::kernel_version().ok_or("N/A").unwrap(),
+            hostname: System::host_name().ok_or("N/A").unwrap(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct BenchmarkReportWriter {
+    config: BenchmarkConfig,
+    results: Vec<BenchmarkResultsWriter>,
+    start_time: String,
+    end_time: String,
+    system: SystemInfo,
+}
 
 
 impl BenchmarkReportWriter {
-    pub async fn json(report: BenchmarkReport, path: &str) -> anyhow::Result<()> {
-        // write the benchmark report to json
+    pub fn new(config: BenchmarkConfig, report: BenchmarkReport) -> anyhow::Result<BenchmarkReportWriter> {
         let mut results: Vec<BenchmarkResultsWriter> = Vec::new();
         for result in report.get_results() {
             let writer = BenchmarkResultsWriter::new(result)?;
             results.push(writer);
         }
-        let report = serde_json::to_string(&results).unwrap();
+        Ok(BenchmarkReportWriter {
+            config,
+            results,
+            start_time: report.start_time().ok_or(anyhow::anyhow!("start_time not set"))?.to_rfc3339(),
+            end_time: report.end_time().ok_or(anyhow::anyhow!("end_time not set"))?.to_rfc3339(),
+            system: SystemInfo::new(),
+        })
+    }
+    pub async fn json(&self, path: &str) -> anyhow::Result<()> {
+        // write the benchmark report to json
+        let report = serde_json::to_string(&self).unwrap();
         let path = path.to_string();
-        fs::write(path, report).await?;
+        // create path
+        if !std::path::Path::new(&path).exists() {
+            fs::create_dir_all(&path).await?;
+        }
+        fs::write(format!("{}/results.json", path), report).await?;
         Ok(())
     }
 }

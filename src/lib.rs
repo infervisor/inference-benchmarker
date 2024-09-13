@@ -24,6 +24,9 @@ mod flux;
 
 pub async fn run(url: String,
                  tokenizer_name: String,
+                 prompt_length: u64,
+                 prompt_variance: u64,
+                 decode_length: u64,
                  max_vus: u64,
                  duration: std::time::Duration,
                  rate: Option<f64>,
@@ -34,6 +37,8 @@ pub async fn run(url: String,
                  stop_sender: Sender<()>,
 ) -> anyhow::Result<()> {
     info!("Starting benchmark");
+    // set process system limits
+    sysinfo::set_open_files_limit(0);
     // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
     let backend = OpenAITextGenerationBackend::new("".to_string(), url, tokenizer_name.clone());
 
@@ -49,6 +54,9 @@ pub async fn run(url: String,
         warmup_duration: prewarm_duration,
         rate,
         num_rates,
+        prompt_length,
+        prompt_variance,
+        decode_length,
     };
     config.validate()?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -94,15 +102,15 @@ pub async fn run(url: String,
 
     // download prompts dataset
     info!("Downloading dataset");
-    let _ = tx.send(Event::Message(MessageEvent{
+    let _ = tx.send(Event::Message(MessageEvent {
         message: "Downloading dataset".to_string(),
         timestamp: chrono::Utc::now(),
         level: Level::Info,
     }));
     let filepath = requests::ShareGPTTextRequestGenerator::download_dataset("hlarcher/share_gpt_small".to_string(), "share_gpt_filtered_small.json".to_string()).expect("Can't download dataset");
-    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, tokenizer_name, 50, 10, 10, 10);
+    let requests = requests::ShareGPTTextRequestGenerator::new(filepath, tokenizer_name, prompt_length, 1, prompt_length * 2, prompt_variance);
 
-    let mut benchmark = benchmark::Benchmark::new(config, Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
+    let mut benchmark = benchmark::Benchmark::new(config.clone(), Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();
     tokio::select! {
         report = benchmark.run() => {
@@ -110,8 +118,9 @@ pub async fn run(url: String,
                 Ok(results) => {
                     info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
-                    let path = "results/results.json".to_string();
-                    BenchmarkReportWriter::json(report, &path).await.unwrap();
+                    let path = "results/".to_string();
+                    let writer=BenchmarkReportWriter::new(config.clone(), report)?;
+                    writer.json(&path).await?;
                 },
                 Err(e) => {
                     error!("Error running benchmark: {:?}", e.to_string());

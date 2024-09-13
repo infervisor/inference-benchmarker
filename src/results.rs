@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::time::Duration;
+use chrono::Utc;
 use crate::executors::ExecutorConfig;
 use crate::requests::TextGenerationAggregatedResponse;
 use crate::results::BenchmarkErrors::NoResponses;
@@ -67,11 +68,15 @@ impl BenchmarkResults {
 
     pub fn token_throughput_secs(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
-            let total_tokens: u32 = self.total_tokens();
+            let total_tokens: u64 = self.total_tokens();
             Ok(total_tokens as f64 / self.duration().unwrap_or_default().as_secs_f64())
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
+    }
+
+    pub fn total_tokens_sent(&self) -> u64 {
+        self.get_successful_responses().iter().map(|response| response.num_prompt_tokens).sum()
     }
 
     pub fn successful_request_rate(&self) -> anyhow::Result<f64> {
@@ -83,7 +88,7 @@ impl BenchmarkResults {
         }
     }
 
-    pub fn total_tokens(&self) -> u32 {
+    pub fn total_tokens(&self) -> u64 {
         self.get_successful_responses().iter().map(|response| response.num_generated_tokens).sum()
     }
 
@@ -173,6 +178,7 @@ impl Debug for BenchmarkResults {
             .field("failed_requests", &self.failed_requests())
             .field("successful_requests", &self.successful_requests())
             .field("request_rate", &self.successful_request_rate().or::<anyhow::Result<f64>>(Ok(-1.0)))
+            .field("sent_prompt_tokens", &self.total_tokens_sent())
             .finish()
     }
 }
@@ -181,13 +187,25 @@ impl Debug for BenchmarkResults {
 #[derive(Debug, Clone)]
 pub struct BenchmarkReport {
     results: Vec<BenchmarkResults>,
+    start_time: Option<chrono::DateTime<Utc>>,
+    end_time: Option<chrono::DateTime<Utc>>,
 }
 
 impl BenchmarkReport {
     pub fn new() -> BenchmarkReport {
         BenchmarkReport {
             results: Vec::new(),
+            start_time: None,
+            end_time: None,
         }
+    }
+
+    pub fn start(&mut self) {
+        self.start_time = Some(Utc::now());
+    }
+
+    pub fn end(&mut self) {
+        self.end_time = Some(Utc::now());
     }
 
     pub fn add_benchmark_result(&mut self, result: BenchmarkResults) {
@@ -196,5 +214,13 @@ impl BenchmarkReport {
 
     pub fn get_results(&self) -> Vec<BenchmarkResults> {
         self.results.clone()
+    }
+
+    pub fn start_time(&self) -> Option<chrono::DateTime<Utc>> {
+        self.start_time
+    }
+
+    pub fn end_time(&self) -> Option<chrono::DateTime<Utc>> {
+        self.end_time
     }
 }

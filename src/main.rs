@@ -37,8 +37,18 @@ struct Args {
     #[clap(default_value = "http://localhost:8000", short, long, env)]
     #[arg(value_parser = parse_url)]
     url: String,
+    /// Disable console UI
     #[clap(short, long, env)]
     no_console: bool,
+    /// Prompt token length
+    #[clap(default_value = "50", long, env)]
+    prompt_length: u64,
+    /// Variance of prompt token length following a normal distribution
+    #[clap(default_value = "10", long, env)]
+    prompt_variance: u64,
+    /// Decode token length (number of tokens to generate)
+    #[clap(default_value = "10", long, env)]
+    decode_length: u64,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, Error> {
@@ -69,6 +79,9 @@ async fn main() {
     let main_thread = tokio::spawn(async move {
         match run(args.url,
                   args.tokenizer_name,
+                  args.prompt_length,
+                  args.prompt_variance,
+                  args.decode_length,
                   args.max_vus,
                   args.duration,
                   args.rate,

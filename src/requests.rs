@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct TextGenerationRequest {
     pub prompt: String,
-    pub max_tokens: u32,
+    pub num_tokens: u64,
+    pub max_tokens: u64,
 }
 
 #[async_trait]
@@ -106,7 +107,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 "stream": true,
             }));
         // start timer
-        aggregated_response.start();
+        aggregated_response.start(request.num_tokens);
         let mut es = EventSource::new(req).unwrap();
         let mut final_response = "".to_string();
         while let Some(event) = es.next().await {
@@ -180,7 +181,7 @@ pub struct ShareGPTEntry {
 }
 
 impl ShareGPTTextRequestGenerator {
-    pub fn new(filepath: PathBuf, tokenizer: String, prompt_tokens: u32, min_tokens: u32, max_tokens: u32, variance: u32) -> Self {
+    pub fn new(filepath: PathBuf, tokenizer: String, prompt_tokens: u64, min_tokens: u64, max_tokens: u64, variance: u64) -> Self {
         let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
         // load json file
         let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
@@ -200,7 +201,7 @@ impl ShareGPTTextRequestGenerator {
                 let prompt = entry.conversations[0].value.clone();
                 // compute number of tokens to generate using a Gaussian distribution
                 let normal = rand_distr::Normal::new(prompt_tokens as f64, variance as f64).unwrap();
-                let mut num_tokens = normal.sample(&mut rand::thread_rng()) as u32;
+                let mut num_tokens = normal.sample(&mut rand::thread_rng()) as u64;
                 if num_tokens < min_tokens {
                     num_tokens = min_tokens;
                 }
@@ -216,6 +217,7 @@ impl ShareGPTTextRequestGenerator {
                 };
                 requests.lock().unwrap().push(TextGenerationRequest {
                     prompt: sampled_prompt,
+                    num_tokens,
                     max_tokens,
                 });
                 // TODO: check that we have enough requests
@@ -259,14 +261,14 @@ impl TextRequestGenerator for ShareGPTTextRequestGenerator {
 }
 
 
-fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: u32) -> anyhow::Result<String> {
+fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: u64) -> anyhow::Result<String> {
     let prompt_tokens = tokenizer.encode(prompt.clone(), false).map_err(|_| anyhow::anyhow!("Error tokenizing prompt"))?;
     if prompt_tokens.len() < num_tokens as usize {
         return Err(anyhow::anyhow!("Prompt is too short to tokenize"));
     }
     // let's do a binary search to find the right number of tokens
     let mut low = 1;
-    let mut high = prompt.len() as u32;
+    let mut high = prompt.len() as u64;
     let mut prompt_sub = String::new();
     while low < high {
         let mid = (low + high) / 2;
@@ -293,7 +295,8 @@ fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: u32) -
 pub struct TextGenerationAggregatedResponse {
     pub start_time: Option<std::time::Instant>,
     pub end_time: Option<std::time::Instant>,
-    pub num_generated_tokens: u32,
+    pub num_generated_tokens: u64,
+    pub num_prompt_tokens: u64,
     pub times_to_tokens: Vec<std::time::Duration>,
     last_received_token_time: std::time::Instant,
     pub failed: bool,
@@ -305,14 +308,16 @@ impl TextGenerationAggregatedResponse {
             start_time: None,
             end_time: None,
             num_generated_tokens: 0,
+            num_prompt_tokens: 0,
             times_to_tokens: Vec::new(),
             last_received_token_time: std::time::Instant::now(),
             failed: false,
         }
     }
-    fn start(&mut self) {
+    fn start(&mut self, num_prompt_tokens:u64) {
         self.start_time = Some(std::time::Instant::now());
         self.last_received_token_time = std::time::Instant::now();
+        self.num_prompt_tokens = num_prompt_tokens;
     }
 
     fn stop(&mut self) {
@@ -324,7 +329,7 @@ impl TextGenerationAggregatedResponse {
         self.failed = true;
     }
 
-    fn add_tokens(&mut self, num_tokens: u32) {
+    fn add_tokens(&mut self, num_tokens: u64) {
         self.num_generated_tokens += num_tokens;
         let time_to_generate = self.last_received_token_time.elapsed();
         self.last_received_token_time = std::time::Instant::now();
