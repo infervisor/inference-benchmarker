@@ -35,6 +35,8 @@ pub struct RunConfiguration {
     pub interactive: bool,
     pub prompt_options: Option<TokenizeOptions>,
     pub decode_options: Option<TokenizeOptions>,
+    pub dataset: String,
+    pub dataset_file: String,
 }
 
 pub async fn run(run_config: RunConfiguration,
@@ -47,8 +49,8 @@ pub async fn run(run_config: RunConfiguration,
     let backend = OpenAITextGenerationBackend::new("".to_string(), run_config.url.clone(), run_config.tokenizer_name.clone());
 
     let config = BenchmarkConfig {
-        max_vus:run_config.max_vus,
-        duration:run_config.duration,
+        max_vus: run_config.max_vus,
+        duration: run_config.duration,
         benchmark_kind: match run_config.benchmark_kind.to_lowercase().as_str() {
             "throughput" => BenchmarkKind::Throughput,
             "sweep" => BenchmarkKind::Sweep,
@@ -110,8 +112,8 @@ pub async fn run(run_config: RunConfiguration,
         timestamp: chrono::Utc::now(),
         level: Level::Info,
     }));
-    let filepath = requests::ConversationTextRequestGenerator::download_dataset("hlarcher/share_gpt_small".to_string(), "share_gpt_filtered_small.json".to_string()).expect("Can't download dataset");
-    let requests = requests::ConversationTextRequestGenerator::new(filepath, run_config.tokenizer_name.clone(), run_config.prompt_options.clone(), run_config.decode_options.clone());
+    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file).expect("Can't download dataset");
+    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name.clone(), run_config.prompt_options.clone(), run_config.decode_options.clone())?;
 
     let mut benchmark = benchmark::Benchmark::new(config.clone(), Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();

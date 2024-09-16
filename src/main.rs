@@ -73,6 +73,12 @@ struct Args {
         value_parser(parse_tokenizer_options)
     )]
     decode_options: Option<TokenizeOptions>,
+    /// Hugging Face dataset to use for prompt generation
+    #[clap(default_value="hlarcher/share_gpt_small",long,env)]
+    dataset: String,
+    /// File to use in the Dataset
+    #[clap(default_value="share_gpt_filtered_small.json",long,env)]
+    dataset_file: String,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, Error> {
@@ -134,6 +140,8 @@ async fn main() {
         interactive: !args.no_console,
         prompt_options: args.prompt_options.clone(),
         decode_options: args.decode_options.clone(),
+        dataset: args.dataset.clone(),
+        dataset_file: args.dataset_file.clone(),
     };
     let main_thread = tokio::spawn(async move {
         match run(run_config,

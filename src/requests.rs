@@ -33,7 +33,9 @@ pub trait TextGenerationBackendClone {
 }
 
 impl<T> TextGenerationBackendClone for T
-    where T: 'static + TextGenerationBackend + Clone + Send + Sync {
+where
+    T: 'static + TextGenerationBackend + Clone + Send + Sync,
+{
     fn clone_box(&self) -> Box<dyn TextGenerationBackend + Send + Sync> {
         Box::new(self.clone())
     }
@@ -202,11 +204,11 @@ impl TokenizeOptions {
 }
 
 impl ConversationTextRequestGenerator {
-    pub fn new(filepath: PathBuf, tokenizer: String, prompt_tokenize_opts: Option<TokenizeOptions>, decode_tokenize_opts: Option<TokenizeOptions>) -> Self {
+    pub fn load(filepath: PathBuf, tokenizer: String, prompt_tokenize_opts: Option<TokenizeOptions>, decode_tokenize_opts: Option<TokenizeOptions>) -> anyhow::Result<Self> {
         let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
         // load json file
-        let input = std::fs::read_to_string(&filepath).expect("Unable to read input file");
-        let data: Vec<ConversationEntry> = serde_json::from_str(&input).expect("Unable to parse input file");
+        let input = std::fs::read_to_string(&filepath)?;
+        let data: Vec<ConversationEntry> = serde_json::from_str(&input).expect("Unable to parse input file. Check that it is valid JSON and matches the expected format.");
         // generate requests
         let requests: Arc<Mutex<Vec<TextGenerationRequest>>> = Arc::from(Mutex::from(Vec::new()));
         info!("Generating requests from {filepath}", filepath = filepath.display().to_string());
@@ -230,7 +232,7 @@ impl ConversationTextRequestGenerator {
                             }
                         };
                         num_tokens
-                    },
+                    }
                     None => 0,
                 };
                 entry.conversations.iter().filter(|c| c.role == "user").for_each(|c| {
@@ -247,7 +249,7 @@ impl ConversationTextRequestGenerator {
                             };
                             requests.lock().unwrap().push(TextGenerationRequest {
                                 prompt,
-                                num_prompt_tokens: num_tokens+system_prompt_tokens,
+                                num_prompt_tokens: num_tokens + system_prompt_tokens,
                                 num_decode_tokens,
                                 system_prompt: system_prompt.clone(),
                             });
@@ -268,7 +270,7 @@ impl ConversationTextRequestGenerator {
                             };
                             requests.lock().unwrap().push(TextGenerationRequest {
                                 prompt: sampled_prompt.0,
-                                num_prompt_tokens: num_tokens+system_prompt_tokens,
+                                num_prompt_tokens: num_tokens + system_prompt_tokens,
                                 num_decode_tokens,
                                 system_prompt: system_prompt.clone(),
                             });
@@ -280,10 +282,10 @@ impl ConversationTextRequestGenerator {
         });
         let requests = requests.lock().unwrap();
         info!("Generated {num_requests} requests", num_requests = requests.len());
-        Self {
+        Ok(Self {
             current_index: Arc::from(AtomicI64::new(0)),
             requests: requests.to_vec(),
-        }
+        })
     }
 
     pub fn download_dataset(repo_name: String, filename: String) -> anyhow::Result<PathBuf> {
