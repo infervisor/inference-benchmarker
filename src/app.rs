@@ -233,12 +233,12 @@ impl App {
                 ExecutorType::ConstantArrivalRate => None
             }
         }).collect::<Vec<_>>();
-        return HashMap::from([
+        HashMap::from([
             ("token_throughput_rate".to_string(), token_throughput_rate),
             ("token_throughput_vus".to_string(), token_throughput_vus),
             ("inter_token_latency_rate".to_string(), inter_token_latency_rate),
             ("inter_token_latency_vus".to_string(), inter_token_latency_vus),
-        ]);
+        ])
     }
 }
 

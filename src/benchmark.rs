@@ -172,7 +172,7 @@ impl Benchmark {
                             id: id.clone(),
                             progress,
                         };
-                        event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
+                        let _ = event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
                             id: progress_evt.id,
                             scheduler_type: ExecutorType::ConstantVUs,
                             request_throughput: Some(progress_evt.progress.requests_throughput),
@@ -180,7 +180,7 @@ impl Benchmark {
                             successful_requests: progress_evt.progress.successful_requests,
                             failed_requests: progress_evt.progress.failed_requests,
                             results: None,
-                        })).unwrap(); //FIXME remove unwrap
+                        })).unwrap();
                     }
                 }
             }
@@ -227,7 +227,7 @@ impl Benchmark {
             scheduler_type: ExecutorType::ConstantVUs,
             request_throughput: results.successful_request_rate().ok(),
             progress: 100.0,
-            results: None,
+            results: Some(results.clone()),
             successful_requests: results.successful_requests() as u64,
             failed_requests: results.failed_requests() as u64,
         }))?;
