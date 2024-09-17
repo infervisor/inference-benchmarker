@@ -373,6 +373,9 @@ pub struct BenchmarkResultsWriter {
     successful_requests: u64,
     request_rate: f64,
     total_tokens_sent: u64,
+    e2e_latency_ms_avg: u128,
+    e2e_latency_ms_p90: u128,
+    e2e_latency_ms_p95: u128,
 }
 
 impl BenchmarkResultsWriter {
@@ -395,6 +398,9 @@ impl BenchmarkResultsWriter {
             successful_requests: results.successful_requests() as u64,
             request_rate: results.successful_request_rate()?,
             total_tokens_sent: results.total_tokens_sent(),
+            e2e_latency_ms_avg: results.e2e_latency_avg().ok().unwrap().as_millis(),
+            e2e_latency_ms_p90: results.e2e_latency_percentile(0.9)?.as_millis(),
+            e2e_latency_ms_p95: results.e2e_latency_percentile(0.95)?.as_millis(),
         })
     }
 }

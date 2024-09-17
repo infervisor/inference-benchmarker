@@ -100,6 +100,29 @@ impl BenchmarkResults {
         }
     }
 
+    pub fn e2e_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
+        if self.is_ready() {
+            let mut total_time = std::time::Duration::new(0, 0);
+            for response in self.get_successful_responses() {
+                total_time += response.e2e_latency().unwrap_or_default();
+            }
+            Ok(total_time / self.total_requests() as u32)
+        } else {
+            Err(anyhow::anyhow!(NoResponses))
+        }
+    }
+
+    pub fn e2e_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
+        if self.is_ready() {
+            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.e2e_latency().unwrap_or_default()).collect();
+            times.sort();
+            let index = (percentile * times.len() as f64) as usize;
+            Ok(times[index])
+        } else {
+            Err(anyhow::anyhow!(NoResponses))
+        }
+    }
+
     pub fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
             let mut total_time = std::time::Duration::new(0, 0);
@@ -172,13 +195,14 @@ impl Debug for BenchmarkResults {
             .field("end_time", &self.end_time())
             .field("total_tokens", &self.total_tokens())
             .field("token_throughput_secs", &self.token_throughput_secs().or::<anyhow::Result<f64>>(Ok(-1.0)))
-            .field("duration", &self.duration().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
+            .field("duration_ms", &self.duration().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
             .field("average_time_to_first_token", &self.time_to_first_token_avg().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
             .field("average_inter_token_latency", &self.inter_token_latency_avg().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
             .field("failed_requests", &self.failed_requests())
             .field("successful_requests", &self.successful_requests())
             .field("request_rate", &self.successful_request_rate().or::<anyhow::Result<f64>>(Ok(-1.0)))
             .field("sent_prompt_tokens", &self.total_tokens_sent())
+            .field("e2e_latency_avg", &self.e2e_latency_avg().or::<anyhow::Result<Duration>>(Ok(Duration::from_secs(0))))
             .finish()
     }
 }

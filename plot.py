@@ -20,35 +20,34 @@ def plot():
     constant_vus = [result for result in results_filtered if result['executor_type'] == 'ConstantVUs']
     constant_vus_x = [result['config']['vus'] for result in constant_vus]
     if len(constant_rate) > 0:
-        plot_inner('Requests/s', constant_rate_x, constant_rate, 'Constant Rate')
+        plot_inner('Requests/s', constant_rate_x, constant_rate, 'Constant Rate benchmark')
     if len(constant_vus) > 0:
-        plot_inner('VUs', constant_vus_x, constant_vus, 'Constant VUs')
+        plot_inner('VUs', constant_vus_x, constant_vus, 'Constant VUs benchmark')
 
 
-def plot_inner(x_name, x_values, results, title):
+def plot_inner(x_name, x_values, results, chart_title):
     fig, axs = plt.subplots(3, 2, figsize=(15, 20))
     fig.tight_layout(pad=6.0)
-    fig.subplots_adjust(hspace=0.4, wspace=0.2, bottom=0.15)
+    fig.subplots_adjust(hspace=0.2, wspace=0.2, bottom=0.15, top=0.92)
     # compute error rate
     for result in results:
         result['error_rate'] = result['failed_requests'] / (
                 result['failed_requests'] + result['successful_requests']) * 100.0
 
-    metrics = ['inter_token_latency_ms_p90', 'time_to_first_token_ms_p90', 'token_throughput_secs',
+    metrics = ['inter_token_latency_ms_p90', 'time_to_first_token_ms_p90', 'e2e_latency_ms_p90', 'token_throughput_secs',
                'successful_requests', 'error_rate']
 
-    titles = ['Inter Token Latency P90 (lower is better)', 'TTFT P90 (lower is better)',
+    titles = ['Inter Token Latency P90 (lower is better)', 'TTFT P90 (lower is better)', 'End to End Latency P90 (lower is better)',
               'Token Throughput (higher is better)', 'Successful requests', 'Error Rate % (lower is better)']
 
-    labels = ['Time (ms)', 'Time (ms)', 'Tokens/s', 'Count', '%']
+    labels = ['Time (ms)', 'Time (ms)', 'Time (ms)', 'Tokens/s', 'Count', '%']
 
-    x = [result['config']['rate'] for result in results]
     colors = ['#FF9D00', '#2F5BA1']
 
     # Plot each metric in its respective subplot
     for ax, metric, title, label in zip(axs.flatten(), metrics, titles, labels):
         data = list(map(lambda result: result[metric], results))
-        ax.plot(x, data, marker='o', color=colors[0])
+        ax.plot(x_values, data, marker='o', color=colors[0])
         ax.set_title(title)
         ax.tick_params(axis='x', rotation=0)
         ax.set_ylabel(label)
@@ -64,6 +63,7 @@ def plot_inner(x_name, x_values, results, title):
         # Add grid lines for better readability
         ax.grid(True, which='both', axis='y', linestyle='--', linewidth=0.5)
         ax.set_axisbelow(True)  # Ensure grid lines are below the bars
+    plt.suptitle(chart_title, fontsize=16)
 
     plt.show()
 

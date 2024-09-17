@@ -447,4 +447,21 @@ impl TextGenerationAggregatedResponse {
             }
         }
     }
+    pub fn e2e_latency(&self) -> Option<std::time::Duration> {
+        match self.start_time {
+            Some(start_time) => {
+                match self.end_time {
+                    Some(end_time) => {
+                        Some(end_time - start_time)
+                    }
+                    None => {
+                        None
+                    }
+                }
+            }
+            None => {
+                None
+            }
+        }
+    }
 }
