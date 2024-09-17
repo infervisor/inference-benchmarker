@@ -91,7 +91,7 @@ impl OpenAITextGenerationBackend {
 impl TextGenerationBackend for OpenAITextGenerationBackend {
     async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationAggregatedResponse>) {
         let url = format!("{base_url}/v1/chat/completions", base_url = self.base_url);
-        let mut aggregated_response = TextGenerationAggregatedResponse::new();
+        let mut aggregated_response = TextGenerationAggregatedResponse::default();
         //debug!("Requesting {url} with prompt: {prompt}, max tokens: {max_tokens}", prompt = request.prompt, max_tokens = request.max_tokens);
         let req = reqwest::Client::new().post(url)
             .header("Authorization", format!("Bearer {token}", token = self.api_key))
@@ -376,10 +376,11 @@ pub struct TextGenerationAggregatedResponse {
     pub times_to_tokens: Vec<std::time::Duration>,
     last_received_token_time: std::time::Instant,
     pub failed: bool,
+    pub ended: bool,
 }
 
-impl TextGenerationAggregatedResponse {
-    fn new() -> Self {
+impl Default for TextGenerationAggregatedResponse {
+    fn default() -> Self {
         Self {
             start_time: None,
             end_time: None,
@@ -388,6 +389,22 @@ impl TextGenerationAggregatedResponse {
             times_to_tokens: Vec::new(),
             last_received_token_time: std::time::Instant::now(),
             failed: false,
+            ended: false,
+        }
+    }
+}
+
+impl TextGenerationAggregatedResponse {
+    pub fn new_as_ended() -> Self {
+        Self {
+            start_time: None,
+            end_time: None,
+            num_generated_tokens: 0,
+            num_prompt_tokens: 0,
+            times_to_tokens: Vec::new(),
+            last_received_token_time: std::time::Instant::now(),
+            failed: false,
+            ended: true,
         }
     }
     fn start(&mut self, num_prompt_tokens: u64) {

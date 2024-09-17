@@ -68,6 +68,8 @@ impl Executor for ConstantVUsExecutor {
                 while let Some(_) = end_rx.recv().await {
                     active_vus.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                     if start.elapsed() > self.config.duration{
+                        // signal that the VU work is done
+                        let _ = responses_tx.send(TextGenerationAggregatedResponse::new_as_ended());
                         info!("Duration reached, waiting for all VUs to finish...");
                         if active_vus.load(std::sync::atomic::Ordering::SeqCst) == 0 {
                             break;
@@ -85,7 +87,7 @@ impl Executor for ConstantVUsExecutor {
 }
 
 async fn start_vu(backend: Box<dyn TextGenerationBackend + Send + Sync>, request: Arc<TextGenerationRequest>, responses_tx: UnboundedSender<TextGenerationAggregatedResponse>, end_tx: Sender<bool>, stop_sender: broadcast::Sender<()>) -> JoinHandle<()> {
-    let mut stop_receiver=stop_sender.subscribe();
+    let mut stop_receiver = stop_sender.subscribe();
     tokio::spawn(async move {
         tokio::select! {
             _ = stop_receiver.recv() => {
@@ -178,7 +180,9 @@ impl Executor for ConstantArrivalRateExecutor {
                         }
                         interval.tick().await;
                     }
-                    drop(responses_tx); // drop response sender to signal VUs to stop
+                    // signal that the VU work is done
+                    info!("Duration reached, waiting for all VUs to finish...");
+                    let _ = responses_tx.send(TextGenerationAggregatedResponse::new_as_ended());
                 }=>{}
             }
         });

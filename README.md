@@ -6,9 +6,9 @@ Benchmarks using constant arrival rate or constant virtual user count.
 ![ui.png](assets%2Fui.png)
 
 ## TODO
-- [ ] Customizable token count and variance
+- [X] Customizable token count and variance
 - [ ] Check results
-- [ ] Allow for multiturn prompts for speculation
+- [X] Allow for multiturn prompts for prefix caching
 - [ ] Push results to Optimum benchmark backend
 - [ ] Script to generate plots from results
 
@@ -27,7 +27,10 @@ $ docker run \
     --tokenizer-name "Qwen/Qwen2-7B" \
     --max-vus 800 \
     --url http:/localhost:8080 \
-    --warmup 20s
+    --warmup 20s \
+    --num-rates 10 \
+    --prompt-options "num_tokens=50,max_tokens=60,min_tokens=40,variance=10" \
+    --decode-options "num_tokens=50,max_tokens=60,min_tokens=40,variance=10"
 ```
 
 Results will be saved in `results.json` in current directory.

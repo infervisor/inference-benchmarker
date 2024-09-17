@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use chrono::Local;
 use log::{error, info, Level, LevelFilter};
-use tokio::sync::broadcast::{Sender};
+use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
-
+use writers::BenchmarkReportWriter;
 pub use crate::app::run_console;
-use crate::benchmark::{BenchmarkReportWriter, Event, MessageEvent};
+use crate::benchmark::{Event, MessageEvent};
 pub use crate::benchmark::{BenchmarkConfig, BenchmarkKind};
-use crate::requests::{OpenAITextGenerationBackend};
-pub use crate::requests::{TokenizeOptions};
+use crate::requests::OpenAITextGenerationBackend;
+pub use crate::requests::TokenizeOptions;
 
 mod requests;
 mod executors;
@@ -22,6 +22,7 @@ mod benchmark;
 mod app;
 mod event;
 mod flux;
+mod writers;
 
 pub struct RunConfiguration {
     pub url: String,

@@ -2,11 +2,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use log::{debug, info, trace, warn};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
 use crate::results::BenchmarkResults;
-use futures_util::StreamExt;
 use tokio::sync::{broadcast, Mutex};
 use crate::results::BenchmarkErrors::NoResponses;
 
@@ -43,28 +41,28 @@ impl Scheduler {
     ) -> Scheduler {
         match executor_type {
             ExecutorType::ConstantVUs => {
-                return Scheduler {
+                Scheduler {
                     id: id.clone(),
                     executor: Arc::from(Mutex::from(ConstantVUsExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone()))),
                     results: Arc::from(Mutex::from(BenchmarkResults::new(id.clone(), ExecutorType::ConstantVUs, config))),
                     requests_generator,
                     progress_tx,
                     stop_sender,
-                };
+                }
             }
             ExecutorType::ConstantArrivalRate => {
                 if config.rate.is_none() {
                     panic!("Rate must be specified for ConstantArrivalRateExecutor");
                 }
                 let rate = config.rate.unwrap();
-                return Scheduler {
+                Scheduler {
                     id: id.clone(),
                     executor: Arc::from(Mutex::from(ConstantArrivalRateExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone(), rate))),
                     results: Arc::from(Mutex::from(BenchmarkResults::new(id.clone(), ExecutorType::ConstantArrivalRate, config))),
                     requests_generator,
                     progress_tx,
-                    stop_sender: stop_sender,
-                };
+                    stop_sender,
+                }
             }
         }
     }
@@ -72,8 +70,7 @@ impl Scheduler {
     pub async fn run(&mut self) -> anyhow::Result<BenchmarkResults> {
         debug!("Starting scheduler '{}'", self.id);
         // add responses to the benchmark result as they arrive
-        let (tx, rx): (UnboundedSender<TextGenerationAggregatedResponse>, UnboundedReceiver<TextGenerationAggregatedResponse>) = tokio::sync::mpsc::unbounded_channel();
-        let rx = UnboundedReceiverStream::new(rx);
+        let (tx, mut rx): (UnboundedSender<TextGenerationAggregatedResponse>, UnboundedReceiver<TextGenerationAggregatedResponse>) = tokio::sync::mpsc::unbounded_channel();
         let results = self.results.clone();
         let progress_tx = self.progress_tx.clone();
         let mut stop_receiver = self.stop_sender.subscribe();
@@ -84,23 +81,24 @@ impl Scheduler {
                     return
                 }
                 _ = async{
-                    rx.for_each(|response| {
+                    while let Some(response) = rx.recv().await{
                         let result = results.clone();
                         let progress_tx = progress_tx.clone();
-                        async move {
-                            trace!("Received response: {:?}", response);
-                            let mut result = result.lock().await;
-                            result.add_response(response);
-                            let expected_duration = result.executor_config().duration.as_secs_f64();
-                            let start_time = result.start_time().unwrap_or(Instant::now());
-                            let _ = progress_tx.send(Some(SchedulerProgress {
-                                progress: (100.0 * (1.0 - (expected_duration - start_time.elapsed().as_secs_f64()) / expected_duration)).min(100.0),
-                                requests_throughput: result.successful_request_rate().unwrap_or_default(),
-                                successful_requests: result.successful_requests() as u64,
-                                failed_requests: result.failed_requests() as u64,
-                            })).await;
+                        trace!("Received response: {:?}", response);
+                        if response.ended {
+                            return;
                         }
-                    }).await;
+                        let mut result = result.lock().await;
+                        result.add_response(response);
+                        let expected_duration = result.executor_config().duration.as_secs_f64();
+                        let start_time = result.start_time().unwrap_or(Instant::now());
+                        let _ = progress_tx.send(Some(SchedulerProgress {
+                            progress: (100.0 * (1.0 - (expected_duration - start_time.elapsed().as_secs_f64()) / expected_duration)).min(100.0),
+                            requests_throughput: result.successful_request_rate().unwrap_or_default(),
+                            successful_requests: result.successful_requests() as u64,
+                            failed_requests: result.failed_requests() as u64,
+                        })).await;
+                    }
                 }=>{}
             }
         });

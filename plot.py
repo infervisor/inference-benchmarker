@@ -52,6 +52,7 @@ def plot_inner(x_name, x_values, results, chart_title):
         ax.tick_params(axis='x', rotation=0)
         ax.set_ylabel(label)
         ax.set_xlabel(x_name)
+        ax.set_ylim(0)
         # rotate x-axis labels for better readability
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=-90)
 

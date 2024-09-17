@@ -183,6 +183,10 @@ impl BenchmarkResults {
     fn get_successful_responses(&self) -> Vec<&TextGenerationAggregatedResponse> {
         self.aggregated_responses.iter().filter(|response| !response.failed).collect()
     }
+
+    pub fn get_responses(&self) -> Vec<TextGenerationAggregatedResponse> {
+        self.aggregated_responses.clone()
+    }
 }
 
 impl Debug for BenchmarkResults {
