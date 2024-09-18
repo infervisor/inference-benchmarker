@@ -53,13 +53,14 @@ def plot_inner(x_title, x_key, results, chart_title):
 
     labels = ['Time (ms)', 'Time (ms)', 'Time (ms)', 'Tokens/s', 'Count', '%']
 
-    colors = ['#2F5BA1']
+    colors = ['#2F5BA1', '#640D5F', '#D91656', '#EE66A6', '#FFEB55']
 
     # Plot each metric in its respective subplot
     for ax, metric, title, label in zip(axs.flatten(), metrics, titles, labels):
         for i, engine in enumerate(results['engine'].unique()):
             df_sorted = results[results['engine'] == engine].sort_values(by=x_key)
-            ax.plot(df_sorted[x_key], df_sorted[metric], marker='o', markersize=2, color=colors[i % len(colors)] if engine!='tgi' else '#FF9D00',
+            ax.plot(df_sorted[x_key], df_sorted[metric], marker='o', markersize=2,
+                    color=colors[i % len(colors)] if engine != 'tgi' else '#FF9D00',
                     label=f"{engine}")
         ax.set_title(title)
         ax.tick_params(axis='x', rotation=0)
