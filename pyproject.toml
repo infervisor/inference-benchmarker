@@ -10,6 +10,8 @@ python = "^3.11"
 matplotlib = "^3.9.2"
 scienceplots = "^2.1.1"
 pandas = "^2.2.2"
+opensearch-py = "^2.7.1"
+boto3 = "^1.35.21"
 
 
 [build-system]

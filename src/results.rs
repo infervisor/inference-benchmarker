@@ -113,14 +113,8 @@ impl BenchmarkResults {
     }
 
     pub fn e2e_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
-        if self.is_ready() {
-            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.e2e_latency().unwrap_or_default()).collect();
-            times.sort();
-            let index = (percentile * times.len() as f64) as usize;
-            Ok(times[index])
-        } else {
-            Err(anyhow::anyhow!(NoResponses))
-        }
+        let quantile = self.quantile_duration(self.get_successful_responses().iter().map(|response| response.e2e_latency().unwrap_or_default()).collect(), percentile)?;
+        Ok(Duration::from_secs_f64(quantile))
     }
 
     pub fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
@@ -135,18 +129,9 @@ impl BenchmarkResults {
         }
     }
 
-    pub fn time_to_first_token_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
-        if self.is_ready() {
-            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).collect();
-            times.sort();
-            let index = (percentile * times.len() as f64) as usize;
-            if index >= times.len() {
-                return Err(anyhow::anyhow!(NoResponses));
-            }
-            Ok(times[index])
-        } else {
-            Err(anyhow::anyhow!(NoResponses))
-        }
+    pub fn time_to_first_token_percentile(&self, percentile: f64) -> anyhow::Result<Duration> {
+        let quantile = self.quantile_duration(self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).collect(), percentile)?;
+        Ok(Duration::from_secs_f64(quantile))
     }
 
     pub fn inter_token_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
@@ -161,15 +146,9 @@ impl BenchmarkResults {
         }
     }
 
-    pub fn inter_token_latency_percentile(&self, percentile: f64) -> anyhow::Result<std::time::Duration> {
-        if self.is_ready() {
-            let mut times: Vec<std::time::Duration> = self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).collect();
-            times.sort();
-            let index = (percentile * times.len() as f64) as usize;
-            Ok(times[index])
-        } else {
-            Err(anyhow::anyhow!(NoResponses))
-        }
+    pub fn inter_token_latency_percentile(&self, percentile: f64) -> anyhow::Result<Duration> {
+        let quantile = self.quantile_duration(self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).collect(), percentile)?;
+        Ok(Duration::from_secs_f64(quantile))
     }
 
     pub fn executor_type(&self) -> ExecutorType {
@@ -186,6 +165,23 @@ impl BenchmarkResults {
 
     pub fn get_responses(&self) -> Vec<TextGenerationAggregatedResponse> {
         self.aggregated_responses.clone()
+    }
+
+    /// Calculate the quantile of a given data set using interpolation method
+    /// Results are similar to `numpy.percentile`
+    fn quantile_duration(&self, mut data: Vec<Duration>, quantile: f64) -> anyhow::Result<f64> {
+        if self.is_ready() {
+            data.sort();
+            let i = (quantile * (data.len() - 1) as f64).floor();
+            let delta = (data.len() - 1) as f64 * quantile - i;
+            if i as usize >= data.len() {
+                return Err(anyhow::anyhow!(NoResponses));
+            }
+            let quantile = (1. - delta) * data[i as usize].as_secs_f64() + delta * data[i as usize + 1].as_secs_f64();
+            Ok(quantile)
+        } else {
+            Err(anyhow::anyhow!(NoResponses))
+        }
     }
 }
 
@@ -250,5 +246,57 @@ impl BenchmarkReport {
 
     pub fn end_time(&self) -> Option<chrono::DateTime<Utc>> {
         self.end_time
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_time_to_first_token_percentile() {
+        let mut response1 = TextGenerationAggregatedResponse::default();
+        response1.start_time = Some(std::time::Instant::now());
+        response1.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+        response1.num_prompt_tokens = 10;
+        response1.num_generated_tokens = 100;
+        response1.failed = false;
+        response1.times_to_tokens = vec![Duration::from_millis(100), Duration::from_millis(200), Duration::from_millis(300), Duration::from_millis(400), Duration::from_millis(500)];
+
+        let mut response2 = TextGenerationAggregatedResponse::default();
+        response2.start_time = Some(std::time::Instant::now());
+        response2.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
+        response2.num_prompt_tokens = 10;
+        response2.num_generated_tokens = 100;
+        response2.failed = false;
+        response2.times_to_tokens = vec![Duration::from_millis(600), Duration::from_millis(700), Duration::from_millis(800), Duration::from_millis(900), Duration::from_millis(1000)];
+
+        let mut response3 = TextGenerationAggregatedResponse::default();
+        response3.start_time = Some(std::time::Instant::now());
+        response3.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(300));
+        response3.num_prompt_tokens = 10;
+        response3.num_generated_tokens = 100;
+        response3.failed = false;
+        response3.times_to_tokens = vec![Duration::from_millis(1100), Duration::from_millis(1200), Duration::from_millis(1300), Duration::from_millis(1400), Duration::from_millis(1500)];
+
+        let mut response4 = TextGenerationAggregatedResponse::default();
+        response4.start_time = Some(std::time::Instant::now());
+        response4.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(300));
+        response4.num_prompt_tokens = 10;
+        response4.num_generated_tokens = 100;
+        response4.failed = false;
+        response4.times_to_tokens = vec![Duration::from_millis(1600), Duration::from_millis(1700), Duration::from_millis(1800), Duration::from_millis(1900), Duration::from_millis(2000)];
+
+        let mut results = BenchmarkResults::new("test".to_string(), ExecutorType::ConstantArrivalRate, ExecutorConfig {
+            max_vus: 0,
+            duration: Default::default(),
+            rate: None,
+        });
+        results.add_response(response1);
+        results.add_response(response2);
+        results.add_response(response3);
+        results.add_response(response4);
+
+        assert_eq!(results.time_to_first_token_percentile(0.9).unwrap(), Duration::from_millis(1450));
+        assert_eq!(results.time_to_first_token_percentile(0.5).unwrap(), Duration::from_millis(850));
     }
 }

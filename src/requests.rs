@@ -448,13 +448,13 @@ impl TextGenerationAggregatedResponse {
 
     pub fn time_to_first_token(&self) -> Option<std::time::Duration> {
         match self.start_time {
-            Some(start_time) => {
+            Some(_) => {
                 match self.times_to_tokens.first() {
                     Some(time_to_first_token) => {
                         Some(time_to_first_token.clone())
                     }
                     None => {
-                        Some(start_time.elapsed())
+                        None
                     }
                 }
             }

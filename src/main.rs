@@ -16,7 +16,7 @@ struct Args {
     #[clap(default_value = "128", short, long, env)]
     max_vus: u64,
     /// The duration of each benchmark step
-    #[clap(default_value = "10s", short, long, env)]
+    #[clap(default_value = "60s", short, long, env)]
     #[arg(value_parser = parse_duration)]
     duration: Duration,
     /// The rate of requests to send per second (only valid for the ConstantArrivalRate benchmark)
