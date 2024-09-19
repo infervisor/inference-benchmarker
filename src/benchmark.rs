@@ -9,6 +9,8 @@ use crate::{executors, scheduler};
 use crate::results::{BenchmarkReport, BenchmarkResults};
 use crate::scheduler::{ExecutorType, SchedulerProgress};
 
+const THROUGHPUT_BUDGET: f64 = 1.2; // sweep up to 120% of max throughput
+
 #[derive(Clone, Debug, strum_macros::Display, Serialize)]
 pub enum BenchmarkKind {
     Throughput,
@@ -297,7 +299,7 @@ impl Benchmark {
         let mut rates = Vec::new();
         let num_rates = self.config.num_rates;
         for i in 1..=num_rates {
-            rates.push(i as f64 * max_throughput / num_rates as f64);
+            rates.push(i as f64 * max_throughput*THROUGHPUT_BUDGET / num_rates as f64);
         }
         for rate in rates {
             self.run_rate(rate).await?;

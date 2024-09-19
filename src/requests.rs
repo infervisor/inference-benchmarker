@@ -6,9 +6,9 @@ use tokio::sync::mpsc::Sender;
 use reqwest_eventsource::{Error, Event, EventSource};
 use log::{debug, error, info, trace};
 use rand_distr::Distribution;
-use tokenizers::Tokenizer;
+use tokenizers::{FromPretrainedParameters, Tokenizer};
 use futures_util::StreamExt;
-use hf_hub::api::sync::Api;
+use hf_hub::api::sync::{ApiBuilder};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::split;
 use rayon::prelude::*;
@@ -221,8 +221,16 @@ impl TokenizeOptions {
 }
 
 impl ConversationTextRequestGenerator {
-    pub fn load(filepath: PathBuf, tokenizer: String, prompt_tokenize_opts: Option<TokenizeOptions>, decode_tokenize_opts: Option<TokenizeOptions>) -> anyhow::Result<Self> {
-        let tokenizer = Arc::new(Tokenizer::from_pretrained(tokenizer, None).expect("Unable to load tokenizer"));
+    pub fn load(filepath: PathBuf, tokenizer: String, prompt_tokenize_opts: Option<TokenizeOptions>, decode_tokenize_opts: Option<TokenizeOptions>, hf_token: Option<String>) -> anyhow::Result<Self> {
+        let mut params = FromPretrainedParameters::default();
+        params.auth_token = hf_token;
+        let tokenizer = match Tokenizer::from_pretrained(tokenizer, Some(params)) {
+            Ok(tokenizer) => tokenizer,
+            Err(e) => {
+                return Err(anyhow::anyhow!("Error loading tokenizer: {e}"));
+            }
+        };
+        let tokenizer = Arc::new(tokenizer);
         // load json file
         let input = std::fs::read_to_string(&filepath)?;
         let data: Vec<ConversationEntry> = serde_json::from_str(&input).expect("Unable to parse input file. Check that it is valid JSON and matches the expected format.");
@@ -305,8 +313,8 @@ impl ConversationTextRequestGenerator {
         })
     }
 
-    pub fn download_dataset(repo_name: String, filename: String) -> anyhow::Result<PathBuf> {
-        let api = Api::new().unwrap();
+    pub fn download_dataset(repo_name: String, filename: String, hf_token: Option<String>) -> anyhow::Result<PathBuf> {
+        let api = ApiBuilder::new().with_token(hf_token).build()?;
         let repo = api.dataset(repo_name);
         let dataset = repo.get(&filename)?;
         Ok(dataset)

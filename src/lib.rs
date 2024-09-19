@@ -38,6 +38,7 @@ pub struct RunConfiguration {
     pub decode_options: Option<TokenizeOptions>,
     pub dataset: String,
     pub dataset_file: String,
+    pub hf_token: Option<String>,
 }
 
 pub async fn run(run_config: RunConfiguration,
@@ -113,8 +114,8 @@ pub async fn run(run_config: RunConfiguration,
         timestamp: chrono::Utc::now(),
         level: Level::Info,
     }));
-    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file).expect("Can't download dataset");
-    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name.clone(), run_config.prompt_options.clone(), run_config.decode_options.clone())?;
+    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file,run_config.hf_token.clone()).expect("Can't download dataset");
+    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name, run_config.prompt_options, run_config.decode_options, run_config.hf_token)?;
 
     let mut benchmark = benchmark::Benchmark::new(config.clone(), Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();

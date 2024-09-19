@@ -5,7 +5,7 @@ Benchmarks using constant arrival rate or constant virtual user count.
 
 
 
-![ui.png](assets%2Fui.png)
+![ui.png](assets/ui.png)
 
 ## Table of contents
 
@@ -13,7 +13,12 @@ Benchmarks using constant arrival rate or constant virtual user count.
 * [Text Generation Inference benchmarking tool](#text-generation-inference-benchmarking-tool)
   * [Table of contents](#table-of-contents)
   * [TODO](#todo)
-  * [Running a benchmark](#running-a-benchmark)
+  * [Get started](#get-started)
+    * [Run a benchmark](#run-a-benchmark)
+    * [Configure your benchmark](#configure-your-benchmark)
+      * [Benchmark mode](#benchmark-mode)
+      * [Dataset configuration](#dataset-configuration)
+      * [Prompt configuration](#prompt-configuration)
   * [Development](#development)
   * [Frequently Asked Questions](#frequently-asked-questions)
 <!-- TOC -->
@@ -130,3 +135,7 @@ $ make build
   * **Constant arrival rate** means that the rate of requests is fixed and the number of virtual users is adjusted to maintain that rate. Queries hit the server independently of responses performances.
 
   **Constant virtual user count** is a closed loop model where the server's response time dictates the number of iterations. **Constant arrival rate** is an open-loop model more representative of real-life workloads.
+
+* **What is the influence of CUDA graphs?**
+CUDA graphs are used to optimize the GPU usage by minimizing the overhead of launching kernels. This can lead to better performance in some cases, but can also lead to worse performance in others.
+If your CUDA graphs are not evenly distributed, you may see a performance drop at some request rates as batch size may fall in a bigger CUDA graph batch size leading to a lost of compute due to excessive padding.

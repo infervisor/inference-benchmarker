@@ -138,8 +138,8 @@ pub async fn run_console(
             _ = stop_receiver_signal.recv() => {}
         }
     });
-    event_thread.await.unwrap();
-    app_thread.await.unwrap();
+    let _ = event_thread.await;
+    let _ = app_thread.await;
 }
 
 impl App {

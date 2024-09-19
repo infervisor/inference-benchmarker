@@ -74,10 +74,10 @@ struct Args {
     )]
     decode_options: Option<TokenizeOptions>,
     /// Hugging Face dataset to use for prompt generation
-    #[clap(default_value="hlarcher/share_gpt_small",long,env)]
+    #[clap(default_value = "hlarcher/share_gpt_small", long, env)]
     dataset: String,
     /// File to use in the Dataset
-    #[clap(default_value="share_gpt_filtered_small.json",long,env)]
+    #[clap(default_value = "share_gpt_filtered_small.json", long, env)]
     dataset_file: String,
 }
 
@@ -128,6 +128,13 @@ async fn main() {
     });
 
     let stop_sender_clone = stop_sender.clone();
+    // get HF token
+    let token_env_key = "HF_TOKEN".to_string();
+    let cache = hf_hub::Cache::default();
+    let hf_token = match std::env::var(token_env_key).ok() {
+        Some(token) => Some(token),
+        None => cache.token(),
+    };
     let run_config = RunConfiguration {
         url: args.url.clone(),
         tokenizer_name: args.tokenizer_name.clone(),
@@ -142,6 +149,7 @@ async fn main() {
         decode_options: args.decode_options.clone(),
         dataset: args.dataset.clone(),
         dataset_file: args.dataset_file.clone(),
+        hf_token,
     };
     let main_thread = tokio::spawn(async move {
         match run(run_config,
@@ -153,5 +161,5 @@ async fn main() {
             }
         };
     });
-    main_thread.await.expect("Failed to run main thread");
+    let _ = main_thread.await;
 }
