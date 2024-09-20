@@ -126,7 +126,7 @@ pub async fn run(run_config: RunConfiguration,
                 Ok(results) => {
                     info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
-                    let path = format!("results/{}_{}.json", chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),run_config.tokenizer_name.replace("/","_"));
+                    let path = format!("results/{}_{}.json",run_config.tokenizer_name.replace("/","_"), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"));
                     let path=Path::new(&path);
                     let writer=BenchmarkReportWriter::new(config.clone(), report)?;
                     writer.json(path).await?;

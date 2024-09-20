@@ -190,7 +190,6 @@ impl Executor for ConstantArrivalRateExecutor {
             active_vus.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             // wait for all VUs to finish
             if start.elapsed() > self.config.duration {
-                info!("Duration reached, waiting for all VUs to finish...");
                 if active_vus.load(std::sync::atomic::Ordering::SeqCst) == 0 {
                     break;
                 }
