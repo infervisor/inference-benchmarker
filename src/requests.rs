@@ -144,8 +144,16 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                         es.close();
                         break;
                     }
-                    // deserialize message data FIXME: handle JSON errors
-                    let oai_response: OpenAITextGenerationResponse = serde_json::from_str(&message.data).unwrap();
+                    // deserialize message data
+                    let oai_response: OpenAITextGenerationResponse = match serde_json::from_str(&message.data) {
+                        Ok(response) => response,
+                        Err(e) => {
+                            error!("Error deserializing OpenAI API response: {e}", e = e);
+                            aggregated_response.fail();
+                            es.close();
+                            break;
+                        }
+                    };
                     let choices = oai_response.choices;
                     match choices[0].clone().finish_reason {
                         None => {
@@ -363,7 +371,7 @@ fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: Option
         }
         Some(num_tokens) => {
             if prompt_tokens.len() < num_tokens as usize {
-                return Err(anyhow::anyhow!("Prompt is too short to tokenize"));
+                return Err(anyhow::anyhow!(format!("Prompt is too short to tokenize: {}<{}", prompt_tokens.len(), num_tokens)));
             }
             // let's do a binary search to find the right number of tokens
             let mut low = 1;

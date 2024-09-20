@@ -114,8 +114,8 @@ pub async fn run(run_config: RunConfiguration,
         timestamp: chrono::Utc::now(),
         level: Level::Info,
     }));
-    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file,run_config.hf_token.clone()).expect("Can't download dataset");
-    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name, run_config.prompt_options, run_config.decode_options, run_config.hf_token)?;
+    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file, run_config.hf_token.clone()).expect("Can't download dataset");
+    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name.clone(), run_config.prompt_options, run_config.decode_options, run_config.hf_token)?;
 
     let mut benchmark = benchmark::Benchmark::new(config.clone(), Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
     let mut stop_receiver = stop_sender.subscribe();
@@ -125,7 +125,7 @@ pub async fn run(run_config: RunConfiguration,
                 Ok(results) => {
                     info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
-                    let path = "results/".to_string();
+                    let path = format!("results/{}_{}.json", chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),run_config.tokenizer_name.replace("/","_"));
                     let writer=BenchmarkReportWriter::new(config.clone(), report)?;
                     writer.json(&path).await?;
                 },
@@ -140,6 +140,9 @@ pub async fn run(run_config: RunConfiguration,
         }
     }
     let _ = tx.send(Event::BenchmarkReportEnd);
+    if !run_config.interactive { // quit app if not interactive
+        let _ = stop_sender.send(());
+    }
     ui_thread.await.unwrap();
     Ok(())
 }

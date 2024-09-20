@@ -116,7 +116,7 @@ impl BenchmarkReportWriter {
         if !std::path::Path::new(&path).exists() {
             fs::create_dir_all(&path).await?;
         }
-        fs::write(format!("{}/results.json", path), report).await?;
+        fs::write(path, report).await?;
         Ok(())
     }
 }
