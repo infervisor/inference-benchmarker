@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
 use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
@@ -77,7 +77,7 @@ impl Scheduler {
         tokio::spawn(async move {
             tokio::select! {
                 _ = stop_receiver.recv() => {
-                    info!("Received stop signal, stopping benchmark");
+                    debug!("Received stop signal, stopping benchmark");
                     return
                 }
                 _ = async{

@@ -1,9 +1,10 @@
 use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 
 use chrono::Local;
-use log::{error, info, Level, LevelFilter};
+use log::{debug, error, info, Level, LevelFilter};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
 use writers::BenchmarkReportWriter;
@@ -94,7 +95,7 @@ pub async fn run(run_config: RunConfiguration,
     let ui_thread = tokio::spawn(async move {
         tokio::select! {
             _ = stop_receiver.recv() => {
-                error!("Received stop signal, stopping benchmark");
+                debug!("Received stop signal, stopping benchmark");
             }
             _ = async{
                 if run_config.interactive {
@@ -126,8 +127,9 @@ pub async fn run(run_config: RunConfiguration,
                     info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
                     let path = format!("results/{}_{}.json", chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),run_config.tokenizer_name.replace("/","_"));
+                    let path=Path::new(&path);
                     let writer=BenchmarkReportWriter::new(config.clone(), report)?;
-                    writer.json(&path).await?;
+                    writer.json(path).await?;
                 },
                 Err(e) => {
                     error!("Error running benchmark: {:?}", e.to_string());
@@ -136,7 +138,7 @@ pub async fn run(run_config: RunConfiguration,
             };
         }
         _ = stop_receiver.recv() => {
-            error!("Received stop signal, stopping benchmark");
+            debug!("Received stop signal, stopping benchmark");
         }
     }
     let _ = tx.send(Event::BenchmarkReportEnd);

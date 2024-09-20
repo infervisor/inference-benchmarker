@@ -1,7 +1,7 @@
 use std::time::Duration;
 use clap::{Error, Parser};
 use clap::error::ErrorKind::InvalidValue;
-use log::error;
+use log::{debug};
 use reqwest::Url;
 use tokio::sync::broadcast;
 use text_generation_inference_benchmark::{run, RunConfiguration, TokenizeOptions};
@@ -123,7 +123,7 @@ async fn main() {
     let stop_sender_clone = stop_sender.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
-        error!("Received stop signal, stopping benchmark");
+        debug!("Received stop signal, stopping benchmark");
         stop_sender_clone.send(()).expect("Failed to send stop signal");
     });
 

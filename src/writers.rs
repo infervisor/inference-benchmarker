@@ -1,3 +1,4 @@
+use std::path::Path;
 use serde::Serialize;
 use tokio::fs;
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
@@ -108,13 +109,16 @@ impl BenchmarkReportWriter {
             system: SystemInfo::new(),
         })
     }
-    pub async fn json(&self, path: &str) -> anyhow::Result<()> {
+    pub async fn json(&self, path: &Path) -> anyhow::Result<()> {
         // write the benchmark report to json
-        let report = serde_json::to_string(&self).unwrap();
-        let path = path.to_string();
-        // create path
-        if !std::path::Path::new(&path).exists() {
-            fs::create_dir_all(&path).await?;
+        let report = serde_json::to_string(&self)?;
+
+        // create path hierarchy if it doesn't exist
+        if !path.exists() {
+            match path.parent() {
+                Some(parent) => fs::create_dir_all(parent).await?,
+                None => {}
+            }
         }
         fs::write(path, report).await?;
         Ok(())
