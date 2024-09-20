@@ -7,9 +7,9 @@ MEM_PER_CPU_GB = 11
 
 def main():
     models = [
-        # ('meta-llama/Meta-Llama-3.1-8B-Instruct', 1),
+        ('meta-llama/Meta-Llama-3.1-8B-Instruct', 1),
         ('meta-llama/Meta-Llama-3.1-70B-Instruct', 4),
-        # ('mistralai/Mixtral-8x7B-Instruct-v0.1', 2),
+        ('mistralai/Mixtral-8x7B-Instruct-v0.1', 2),
     ]
     engines = ['tgi', 'vllm']
     for model in models:

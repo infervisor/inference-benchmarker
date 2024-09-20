@@ -34,6 +34,7 @@ srun --het-group=0 \
      /usr/local/bin/text-generation-launcher \
       --model-id $MODEL \
       --max-concurrent-requests 512 \
+      --max-waiting-tokens 5 \
       --cuda-graphs="1,8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128"&
 
 # wait until /health is available, die after 5 minutes
@@ -56,9 +57,9 @@ if [[ $exit_code != 124 ]]; then
              --tokenizer-name "$MODEL" \
              --max-vus 800 \
              --url "http://${SLURM_JOB_NODELIST_HET_GROUP_0}:${PORT}" \
-             --duration 30s \
+             --duration 120s \
              --warmup 30s \
-             --num-rates 2 \
+             --num-rates 30 \
              --prompt-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
              --decode-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
              --no-console

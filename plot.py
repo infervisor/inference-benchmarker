@@ -84,9 +84,10 @@ def plot_inner(x_title, x_key, results, chart_title):
 
 
 if __name__ == '__main__':
+    directory='results/llama-70B'
     # list json files in results directory
     data_files = {}
-    for filename in os.listdir('results/llama-70B'):
+    for filename in os.listdir(directory):
         if filename.endswith('.json'):
-            data_files[filename.split('.')[0]] = f'results/{filename}'
+            data_files[filename.split('.')[0]] = f'{directory}/{filename}'
     plot(data_files)

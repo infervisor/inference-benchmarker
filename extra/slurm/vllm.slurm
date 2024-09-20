@@ -56,9 +56,9 @@ if [[ $exit_code != 124 ]]; then
              --tokenizer-name "$MODEL" \
              --max-vus 800 \
              --url "http://${SLURM_JOB_NODELIST_HET_GROUP_0}:${PORT}" \
-             --duration 30s \
+             --duration 120s \
              --warmup 30s \
-             --num-rates 2 \
+             --num-rates 30 \
              --prompt-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
              --decode-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
              --no-console
