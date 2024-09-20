@@ -65,6 +65,7 @@ pub async fn run(run_config: RunConfiguration,
         num_rates: run_config.num_rates,
         prompt_options: run_config.prompt_options.clone(),
         decode_options: run_config.decode_options.clone(),
+        tokenizer: run_config.tokenizer_name.clone(),
     };
     config.validate()?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

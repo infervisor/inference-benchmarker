@@ -1,7 +1,6 @@
 import json
 import os
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -87,7 +86,7 @@ def plot_inner(x_title, x_key, results, chart_title):
 if __name__ == '__main__':
     # list json files in results directory
     data_files = {}
-    for filename in os.listdir('results'):
+    for filename in os.listdir('results/llama-70B'):
         if filename.endswith('.json'):
             data_files[filename.split('.')[0]] = f'results/{filename}'
     plot(data_files)

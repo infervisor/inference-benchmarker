@@ -69,6 +69,7 @@ pub struct BenchmarkConfig {
     pub num_rates: u64,
     pub prompt_options: Option<TokenizeOptions>,
     pub decode_options: Option<TokenizeOptions>,
+    pub tokenizer: String,
 }
 
 impl BenchmarkConfig {
