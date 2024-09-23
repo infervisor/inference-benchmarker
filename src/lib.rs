@@ -131,6 +131,7 @@ pub async fn run(run_config: RunConfiguration,
                     let path=Path::new(&path);
                     let writer=BenchmarkReportWriter::new(config.clone(), report)?;
                     writer.json(path).await?;
+                    info!("Report saved to {:?}",path);
                 },
                 Err(e) => {
                     error!("Error running benchmark: {:?}", e.to_string());
