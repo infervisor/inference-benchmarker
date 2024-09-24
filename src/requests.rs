@@ -52,6 +52,7 @@ pub struct OpenAITextGenerationBackend {
     pub api_key: String,
     pub base_url: String,
     pub model_name: String,
+    pub client: reqwest::Client,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -88,6 +89,7 @@ pub struct OpenAITextGenerationRequest {
 impl OpenAITextGenerationBackend {
     pub fn new(api_key: String, base_url: String, model_name: String) -> Self {
         Self {
+            client: reqwest::Client::new(),
             api_key,
             base_url,
             model_name,
@@ -124,7 +126,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
             max_tokens: request.num_decode_tokens,
             stream: true,
         };
-        let req = reqwest::Client::new().post(url)
+        let req = self.client.post(url)
             .header("Authorization", format!("Bearer {token}", token = self.api_key))
             .json(&serde_json::json!(body));
         // start timer
