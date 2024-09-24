@@ -66,6 +66,7 @@ pub struct BenchmarkConfig {
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub warmup_duration: Duration,
     pub rate: Option<f64>,
+    pub max_rate: Option<f64>,
     pub num_rates: u64,
     pub prompt_options: Option<TokenizeOptions>,
     pub decode_options: Option<TokenizeOptions>,
@@ -284,23 +285,33 @@ impl Benchmark {
     }
 
     pub async fn run_sweep(&mut self) -> anyhow::Result<()> {
-        // run a throughput benchmark to retrieve the maximum throughput of server
-        self.run_throughput().await?;
-        // get the max throughput from the second benchmark result (first is warmup)
-        let throughput_results = &self.report.get_results()[1];
-        let max_throughput = throughput_results.successful_request_rate()?;
-        let max_tokens_throughput = throughput_results.token_throughput_secs()?;
-        // run a sweep benchmark for 10 different rates from 1req/s to computed max throughput
-        // notify event bus
-        self.event_bus.send(Event::Message(MessageEvent {
-            message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
-            timestamp: chrono::Utc::now(),
-            level: log::Level::Info,
-        }))?;
+        let max_throughput;
+        if self.config.max_rate.is_none() {
+            // run a throughput benchmark to retrieve the maximum throughput of server
+            self.run_throughput().await?;
+            // get the max throughput from the second benchmark result (first is warmup)
+            let throughput_results = &self.report.get_results()[1];
+            max_throughput = throughput_results.successful_request_rate()?;
+            let max_tokens_throughput = throughput_results.token_throughput_secs()?;
+            // notify event bus
+            self.event_bus.send(Event::Message(MessageEvent {
+                message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
+                timestamp: chrono::Utc::now(),
+                level: log::Level::Info,
+            }))?;
+        } else {
+            max_throughput = self.config.max_rate.expect("max_rate is Some");
+            self.event_bus.send(Event::Message(MessageEvent {
+                message: format!("Max throughput is manually set to: {:.2} req/s", max_throughput),
+                timestamp: chrono::Utc::now(),
+                level: log::Level::Info,
+            }))?;
+        }
+        // run a sweep benchmark for 10 different rates from 1req/s to max throughput
         let mut rates = Vec::new();
         let num_rates = self.config.num_rates;
         for i in 1..=num_rates {
-            rates.push(i as f64 * max_throughput*THROUGHPUT_BUDGET / num_rates as f64);
+            rates.push(i as f64 * max_throughput * THROUGHPUT_BUDGET / num_rates as f64);
         }
         for rate in rates {
             self.run_rate(rate).await?;

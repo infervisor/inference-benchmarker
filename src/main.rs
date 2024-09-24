@@ -26,6 +26,11 @@ struct Args {
     /// The rates will be linearly spaced up to the detected maximum rate
     #[clap(default_value = "10", long, env)]
     num_rates: u64,
+
+    /// The maximum rate to sweep up to (only valid for the "sweep" benchmark).
+    /// If not specified, the maximum rate will be detected by the benchmark.
+    #[clap(long, env)]
+    max_rate: Option<f64>,
     /// The kind of benchmark to run (throughput, sweep, optimum)
     #[clap(default_value = "sweep", short, long, env)]
     benchmark_kind: String,
@@ -142,6 +147,7 @@ async fn main() {
         duration: args.duration,
         rate: args.rate,
         num_rates: args.num_rates,
+        max_rate: args.max_rate,
         benchmark_kind: args.benchmark_kind.clone(),
         warmup_duration: args.warmup,
         interactive: !args.no_console,

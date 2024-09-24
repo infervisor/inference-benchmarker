@@ -32,6 +32,7 @@ pub struct RunConfiguration {
     pub duration: std::time::Duration,
     pub rate: Option<f64>,
     pub num_rates: u64,
+    pub max_rate: Option<f64>,
     pub benchmark_kind: String,
     pub warmup_duration: std::time::Duration,
     pub interactive: bool,
@@ -53,6 +54,7 @@ pub async fn run(run_config: RunConfiguration,
 
     let config = BenchmarkConfig {
         max_vus: run_config.max_vus,
+        max_rate: run_config.max_rate,
         duration: run_config.duration,
         benchmark_kind: match run_config.benchmark_kind.to_lowercase().as_str() {
             "throughput" => BenchmarkKind::Throughput,
