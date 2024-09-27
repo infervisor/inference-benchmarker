@@ -19,18 +19,14 @@ struct Args {
     #[clap(default_value = "60s", short, long, env)]
     #[arg(value_parser = parse_duration)]
     duration: Duration,
-    /// The rate of requests to send per second (only valid for the ConstantArrivalRate benchmark)
+    /// A list of rates of requests to send per second (only valid for the ConstantArrivalRate benchmark).
     #[clap(short, long, env)]
-    rate: Option<f64>,
+    rates: Option<Vec<f64>>,
     /// The number of rates to sweep through (only valid for the "sweep" benchmark)
     /// The rates will be linearly spaced up to the detected maximum rate
     #[clap(default_value = "10", long, env)]
     num_rates: u64,
 
-    /// The maximum rate to sweep up to (only valid for the "sweep" benchmark).
-    /// If not specified, the maximum rate will be detected by the benchmark.
-    #[clap(long, env)]
-    max_rate: Option<f64>,
     /// The kind of benchmark to run (throughput, sweep, optimum)
     #[clap(default_value = "sweep", short, long, env)]
     benchmark_kind: String,
@@ -145,9 +141,8 @@ async fn main() {
         tokenizer_name: args.tokenizer_name.clone(),
         max_vus: args.max_vus,
         duration: args.duration,
-        rate: args.rate,
+        rates: args.rates,
         num_rates: args.num_rates,
-        max_rate: args.max_rate,
         benchmark_kind: args.benchmark_kind.clone(),
         warmup_duration: args.warmup,
         interactive: !args.no_console,

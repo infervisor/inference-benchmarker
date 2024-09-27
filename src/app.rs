@@ -300,12 +300,16 @@ impl Widget for &App {
             .render(bottom_layout[1], buf);
 
         // BENCHMARK config
+        let rate_mode = match self.benchmark_config.rates {
+            None => { "Automatic".to_string() }
+            Some(_) => { "Manual".to_string() }
+        };
         let config_text = Text::from(vec![Line::from(vec![
-            format!("Benchmark: {kind} | Max VUs: {max_vus} | Duration: {duration} sec | Rate: {rate}req/s | Warmup: {warmup} sec",
+            format!("Benchmark: {kind} | Max VUs: {max_vus} | Duration: {duration} sec | Rates: {rates} | Warmup: {warmup} sec",
                     kind = self.benchmark_config.benchmark_kind,
                     max_vus = self.benchmark_config.max_vus,
                     duration = self.benchmark_config.duration.as_secs_f64(),
-                    rate = self.benchmark_config.rate.or(Some(0.0)).unwrap(),
+                    rates = rate_mode,
                     warmup = self.benchmark_config.warmup_duration.as_secs_f64()).white().bold(),
         ])]);
         Paragraph::new(config_text.clone())

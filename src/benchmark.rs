@@ -65,8 +65,7 @@ pub struct BenchmarkConfig {
     #[serde(rename = "warmup_duration_secs")]
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub warmup_duration: Duration,
-    pub rate: Option<f64>,
-    pub max_rate: Option<f64>,
+    pub rates: Option<Vec<f64>>,
     pub num_rates: u64,
     pub prompt_options: Option<TokenizeOptions>,
     pub decode_options: Option<TokenizeOptions>,
@@ -86,18 +85,18 @@ impl BenchmarkConfig {
         }
         match self.benchmark_kind {
             BenchmarkKind::Throughput => {
-                if self.rate.is_some() {
-                    return Err(anyhow::anyhow!("rate must not be specified for throughput benchmark"));
+                if self.rates.is_some() {
+                    return Err(anyhow::anyhow!("rates must not be specified for throughput benchmark"));
                 }
             }
             BenchmarkKind::Sweep => {
-                if self.rate.is_some() {
-                    return Err(anyhow::anyhow!("rate must not be specified for sweep benchmark"));
+                if self.rates.is_some() {
+                    return Err(anyhow::anyhow!("rates must not be specified for sweep benchmark"));
                 }
             }
             BenchmarkKind::Rate => {
-                if self.rate.is_none() {
-                    return Err(anyhow::anyhow!("rate must be specified for sweep benchmark"));
+                if self.rates.is_none() {
+                    return Err(anyhow::anyhow!("rates must be specified for rate benchmark"));
                 }
             }
         }
@@ -142,7 +141,7 @@ impl Benchmark {
                 self.run_sweep().await?;
             }
             BenchmarkKind::Rate => {
-                self.run_rate(self.config.rate.expect("config already validated")).await?;
+                self.run_rates().await?;
             }
         }
         self.end_time = Some(std::time::Instant::now());
@@ -285,34 +284,33 @@ impl Benchmark {
     }
 
     pub async fn run_sweep(&mut self) -> anyhow::Result<()> {
-        let max_throughput;
-        if self.config.max_rate.is_none() {
-            // run a throughput benchmark to retrieve the maximum throughput of server
-            self.run_throughput().await?;
-            // get the max throughput from the second benchmark result (first is warmup)
-            let throughput_results = &self.report.get_results()[1];
-            max_throughput = throughput_results.successful_request_rate()?;
-            let max_tokens_throughput = throughput_results.token_throughput_secs()?;
-            // notify event bus
-            self.event_bus.send(Event::Message(MessageEvent {
-                message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
-                timestamp: chrono::Utc::now(),
-                level: log::Level::Info,
-            }))?;
-        } else {
-            max_throughput = self.config.max_rate.expect("max_rate is Some");
-            self.event_bus.send(Event::Message(MessageEvent {
-                message: format!("Max throughput is manually set to: {:.2} req/s", max_throughput),
-                timestamp: chrono::Utc::now(),
-                level: log::Level::Info,
-            }))?;
-        }
+
+        // run a throughput benchmark to retrieve the maximum throughput of server
+        self.run_throughput().await?;
+        // get the max throughput from the second benchmark result (first is warmup)
+        let throughput_results = &self.report.get_results()[1];
+        let max_throughput = throughput_results.successful_request_rate()?;
+        let max_tokens_throughput = throughput_results.token_throughput_secs()?;
+        // notify event bus
+        self.event_bus.send(Event::Message(MessageEvent {
+            message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
+            timestamp: chrono::Utc::now(),
+            level: log::Level::Info,
+        }))?;
         // run a sweep benchmark for 10 different rates from 1req/s to max throughput
         let mut rates = Vec::new();
         let num_rates = self.config.num_rates;
         for i in 1..=num_rates {
             rates.push(i as f64 * max_throughput * THROUGHPUT_BUDGET / num_rates as f64);
         }
+        for rate in rates {
+            self.run_rate(rate).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn run_rates(&mut self) -> anyhow::Result<()> {
+        let rates = self.config.rates.clone().expect("config already validated");
         for rate in rates {
             self.run_rate(rate).await?;
         }
