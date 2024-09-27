@@ -12,6 +12,8 @@ scienceplots = "^2.1.1"
 pandas = "^2.2.2"
 opensearch-py = "^2.7.1"
 boto3 = "^1.35.21"
+gradio = "4.44.0"
+pyarrow = "^17.0.0"
 
 
 [build-system]

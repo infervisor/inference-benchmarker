@@ -10,7 +10,7 @@ plt.style.use('science')
 pd.options.mode.copy_on_write = True
 
 
-def plot(data_files: dict[str, str]):
+def plot(model:str,data_files: dict[str, str]):
     df = pd.DataFrame()
     # Load the results
     for key, filename in data_files.items():
@@ -23,15 +23,16 @@ def plot(data_files: dict[str, str]):
                 entry['engine'] = key
                 del entry['config']
                 df = pd.concat([df, pd.DataFrame(entry, index=[0])])
-
     # Filter the results
     constant_rate = df[
         (df['executor_type'] == 'ConstantArrivalRate') & (df['id'] != 'warmup') & (df['id'] != 'throughput')]
     constant_vus = df[(df['executor_type'] == 'ConstantVUs') & (df['id'] != 'warmup') & (df['id'] != 'throughput')]
     if len(constant_rate) > 0:
-        plot_inner('Requests/s', 'rate', constant_rate, 'Constant Rate benchmark')
+        plot_inner('Requests/s', 'rate', constant_rate, f'Constant Rate benchmark\n{model}')
+        plt.savefig(f'{directory}/{model}_constant_rate.png')
     if len(constant_vus) > 0:
-        plot_inner('VUs', 'max_vus', constant_vus, 'Constant VUs benchmark')
+        plot_inner('VUs', 'max_vus', constant_vus, f'Constant VUs benchmark\n{model}')
+        plt.savefig(f'{directory}/{model}_constant_vus.png')
 
 
 def plot_inner(x_title, x_key, results, chart_title):
@@ -59,7 +60,7 @@ def plot_inner(x_title, x_key, results, chart_title):
         for i, engine in enumerate(results['engine'].unique()):
             df_sorted = results[results['engine'] == engine].sort_values(by=x_key)
             ax.plot(df_sorted[x_key], df_sorted[metric], marker='o', markersize=2,
-                    color=colors[i % len(colors)] if engine != 'tgi' else '#FF9D00',
+                    color=colors[i % len(colors)] if not engine.lower().startswith('tgi') else '#FF9D00',
                     label=f"{engine}")
         ax.set_title(title)
         ax.tick_params(axis='x', rotation=0)
@@ -80,14 +81,17 @@ def plot_inner(x_title, x_key, results, chart_title):
         ax.legend(title='Engine', loc='upper right')
     plt.suptitle(chart_title, fontsize=16)
 
-    plt.show()
+    #plt.show()
 
 
 if __name__ == '__main__':
-    directory='results/llama-70B'
-    # list json files in results directory
-    data_files = {}
-    for filename in os.listdir(directory):
-        if filename.endswith('.json'):
-            data_files[filename.split('.')[0]] = f'{directory}/{filename}'
-    plot(data_files)
+    results_dir = 'results'
+    # list directories
+    directories = [f'{results_dir}/{d}' for d in os.listdir(results_dir) if os.path.isdir(f'{results_dir}/{d}')]
+    for directory in directories:
+        # list json files in results directory
+        data_files = {}
+        for filename in os.listdir(directory):
+            if filename.endswith('.json'):
+                data_files[filename.split('.')[-2]] = f'{directory}/{filename}'
+        plot(directory.split('/')[-1], data_files)

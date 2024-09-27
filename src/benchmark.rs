@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use log::{debug, info};
@@ -70,6 +71,8 @@ pub struct BenchmarkConfig {
     pub prompt_options: Option<TokenizeOptions>,
     pub decode_options: Option<TokenizeOptions>,
     pub tokenizer: String,
+    #[serde(rename = "meta")]
+    pub extra_metadata: Option<HashMap<String, String>>,
 }
 
 impl BenchmarkConfig {

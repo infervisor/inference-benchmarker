@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -40,6 +41,7 @@ pub struct RunConfiguration {
     pub dataset: String,
     pub dataset_file: String,
     pub hf_token: Option<String>,
+    pub extra_metadata: Option<HashMap<String, String>>,
 }
 
 pub async fn run(run_config: RunConfiguration,
@@ -66,6 +68,7 @@ pub async fn run(run_config: RunConfiguration,
         prompt_options: run_config.prompt_options.clone(),
         decode_options: run_config.decode_options.clone(),
         tokenizer: run_config.tokenizer_name.clone(),
+        extra_metadata: run_config.extra_metadata.clone(),
     };
     config.validate()?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

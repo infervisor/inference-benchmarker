@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 use clap::{Error, Parser};
 use clap::error::ErrorKind::InvalidValue;
@@ -80,6 +81,13 @@ struct Args {
     /// File to use in the Dataset
     #[clap(default_value = "share_gpt_filtered_small.json", long, env)]
     dataset_file: String,
+    /// Extra metadata to include in the benchmark results file.
+    /// It can be, for example, used to include information about the configuration of the
+    /// benched server.
+    /// Can be specified multiple times.
+    /// Example: --extra-meta key1=value1 --extra-meta key2=value2
+    #[clap(long, env, value_parser(parse_key_val))]
+    extra_meta: Option<HashMap<String, String>>,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, Error> {
@@ -91,6 +99,19 @@ fn parse_url(s: &str) -> Result<String, Error> {
         Ok(_) => Ok(s.to_string()),
         Err(_) => Err(Error::new(InvalidValue)),
     }
+}
+
+fn parse_key_val(s: &str) -> Result<HashMap<String, String>, Error> {
+    let key_value = s.split("=").collect::<Vec<&str>>();
+    if key_value.len() % 2 != 0 {
+        return Err(Error::new(InvalidValue));
+    }
+    let mut key_val_map = HashMap::new();
+    for i in 0..key_value.len() / 2 {
+        key_val_map.insert(key_value[i * 2].to_string(), key_value[i * 2 + 1].to_string());
+    }
+
+    Ok(key_val_map)
 }
 
 fn parse_tokenizer_options(s: &str) -> Result<TokenizeOptions, Error> {
@@ -151,6 +172,7 @@ async fn main() {
         dataset: args.dataset.clone(),
         dataset_file: args.dataset_file.clone(),
         hf_token,
+        extra_metadata: args.extra_meta.clone(),
     };
     let main_thread = tokio::spawn(async move {
         match run(run_config,
