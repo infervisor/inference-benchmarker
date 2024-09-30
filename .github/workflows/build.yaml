@@ -44,6 +44,7 @@ jobs:
         with:
           images: |
             registry.internal.huggingface.tech/api-inference/text-generation-inference-benchmark
+            ghcr.io/huggingface/text-generation-inference-benchmark
           tags: |
             type=raw,value=sha-${{ env.GITHUB_SHA_SHORT }}${{ env.LABEL }}
       # If main, release or tag
@@ -56,6 +57,7 @@ jobs:
             latest=auto
           images: |
             registry.internal.huggingface.tech/api-inference/text-generation-inference-benchmark
+            ghcr.io/huggingface/text-generation-inference-benchmark
           tags: |
             type=semver,pattern={{version}}${{ env.LABEL }}
             type=semver,pattern={{major}}.{{minor}}${{ env.LABEL }}

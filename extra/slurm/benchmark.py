@@ -41,6 +41,7 @@ def main():
                         f'{engine}.slurm']
                 env = os.environ.copy()
                 env['MODEL'] = model[0]
+                env['TP'] = str(gpus)
                 process = subprocess.run(args, capture_output=True,
                                          env=env)
                 print(process.stdout.decode())

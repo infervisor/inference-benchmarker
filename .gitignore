@@ -170,3 +170,4 @@ Cargo.lock
 *.json
 *.txt
 results
+*.parquet

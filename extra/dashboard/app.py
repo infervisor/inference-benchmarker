@@ -94,8 +94,8 @@ if __name__ == '__main__':
         {"rate": [1, 2], "inter_token_latency_ms_p90": [10, 20], "engine": ["tgi", "vllm"]})
     df = load_data()
     models = df["model"].unique()
-    devices= df["device"].unique()
-    with gr.Blocks(css=css) as demo:
+    devices = df["device"].unique()
+    with gr.Blocks(css=css, title="TGI benchmarks") as demo:
         with gr.Row():
             header = gr.Markdown("# TGI benchmarks\nBenchmark results for Hugging Face TGI 🤗")
         with gr.Row():
@@ -119,7 +119,8 @@ if __name__ == '__main__':
                     gs = stack.enter_context(gr.Row())
                 line_plots.append(
                     {"component": gr.LinePlot(default_df, label=f'{v.title}', x="rate", y=k,
-                                              color="engine", y_title=v.y_title, color_map={'vLLM':'#2F5BA1','TGI':'#FF9D00'}), "model": model.value,
+                                              color="engine", y_title=v.y_title,
+                                              color_map={'vLLM': '#2F5BA1', 'TGI': '#FF9D00'}), "model": model.value,
                      "device": device})
                 i += 1
 
