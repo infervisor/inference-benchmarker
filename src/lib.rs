@@ -147,6 +147,7 @@ pub async fn run(run_config: RunConfiguration,
         }
     }
     let _ = tx.send(Event::BenchmarkReportEnd);
+    info!("Benchmark finished");
     if !run_config.interactive { // quit app if not interactive
         let _ = stop_sender.send(());
     }

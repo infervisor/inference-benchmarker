@@ -181,7 +181,7 @@ async fn main() {
         ).await {
             Ok(_) => {}
             Err(e) => {
-                println!("Error: {:?}", e)
+                println!("Fatal: {:?}", e)
             }
         };
     });
