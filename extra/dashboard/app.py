@@ -1,5 +1,4 @@
 import os
-from cProfile import label
 from contextlib import ExitStack
 from dataclasses import dataclass
 
@@ -51,7 +50,8 @@ The metrics are:
 df_bench = pd.DataFrame()
 df_ci = pd.DataFrame()
 summary = pd.DataFrame()
-line_plots = []
+line_plots_bench = []
+line_plots_ci = []
 column_mappings = {'inter_token_latency_ms_p90': 'ITL P90 (ms)', 'time_to_first_token_ms_p90': 'TTFT P90 (ms)',
                    'e2e_latency_ms_p90': 'E2E P90 (ms)', 'token_throughput_secs': 'Throughput (tokens/s)',
                    'successful_requests': 'Successful requests', 'error_rate': 'Error rate (%)', 'model': 'Model',
@@ -63,11 +63,23 @@ def plot(model, device) -> pd.DataFrame:
     return d
 
 
-def update_app(device_bench, device_ci, model, commit_ref, commit_compare):
+def load_demo(device_bench, model_bench, device_ci, model_ci, commit_ref, commit_compare):
+    return update_bench(device_bench, model_bench) + update_ci(device_ci, model_ci, commit_ref, commit_compare)
+
+
+def update_bench(device_bench, model):
     res = []
-    for plot in line_plots:
+    for plot in line_plots_bench:
         res.append(df_bench[(df_bench['model'] == model) & (df_bench['device'] == device_bench)])
-    return res + [summary_table(device_bench), compare_table(device_ci, commit_ref, commit_compare)]
+    return res + [summary_table(device_bench)]
+
+
+def update_ci(device_ci, model_ci, commit_ref, commit_compare):
+    res = []
+    for plot in line_plots_ci:
+        res.append(df_ci[(df_ci['model'] == model_ci) & (df_ci['device'] == device_ci) & (
+                (df_ci['version'] == commit_ref) | (df_ci['version'] == commit_compare))])
+    return res + [compare_table(device_ci, commit_ref, commit_compare)]
 
 
 def summary_table(device) -> pd.DataFrame:
@@ -128,7 +140,7 @@ def select_region(selection: gr.SelectData, device, model):
     data = df_bench[(df_bench['model'] == model) & (df_bench['device'] == device) & (df_bench['rate'] >= min_w) & (
             df_bench['rate'] <= max_w)]
     res = []
-    for plot in line_plots:
+    for plot in line_plots_bench:
         # find the y values for the selected region
         metric = plot["metric"]
         y_min = data[metric].min()
@@ -139,7 +151,7 @@ def select_region(selection: gr.SelectData, device, model):
 
 def reset_region():
     res = []
-    for _ in line_plots:
+    for _ in line_plots_bench:
         res.append(gr.LinePlot(x_lim=None, y_lim=None))
     return res
 
@@ -154,11 +166,13 @@ def load_datasource(datasource, fn):
 
 
 if __name__ == '__main__':
+    # Load data
     datasource_bench = os.environ.get('DATASOURCE_BENCH', 'file://benchmarks.parquet')
     datasource_ci = os.environ.get('DATASOURCE_CI', 'file://ci.parquet')
     df_bench = load_datasource(datasource_bench, load_bench_results)
     df_ci = load_datasource(datasource_ci, load_ci_results)
 
+    # Define metrics
     metrics = {
         "inter_token_latency_ms_p90": PlotConfig(title="Inter Token Latency P90 (lower is better)", x_title="QPS",
                                                  y_title="Time (ms)"),
@@ -174,12 +188,20 @@ if __name__ == '__main__':
     }
     default_df = pd.DataFrame.from_dict(
         {"rate": [1, 2], "inter_token_latency_ms_p90": [10, 20], "engine": ["tgi", "vllm"]})
-    # df_bench = load_bench_results()
-    # df_ci = load_ci_results()
+
     models = df_bench["model"].unique()
+    models_ci = df_ci["model"].unique()
+
     devices_bench = df_bench["device"].unique()
     devices_ci = df_ci["device"].unique()
+
     commits = df_ci[df_ci["engine"] == "TGI"]["version"].unique()
+    colors = ['#640D5F', '#D91656', '#EE66A6', '#FFEB55']
+    colormap = {}
+    for idx, engine in enumerate(df_bench['engine'].unique()):
+        colormap[engine] = colors[idx % len(colors)]
+    colormap['vLLM'] = '#2F5BA1'
+    colormap['TGI'] = '#FF9D00'
     with gr.Blocks(css=css, title="TGI benchmarks") as demo:
         with gr.Row():
             header = gr.Markdown("# TGI benchmarks\nBenchmark results for Hugging Face TGI 🤗")
@@ -203,19 +225,13 @@ if __name__ == '__main__':
                 details_desc = gr.Markdown("## Details")
             with gr.Row():
                 model = gr.Dropdown(list(models), label="Select model", value=models[0])
-            colors = ['#640D5F', '#D91656', '#EE66A6', '#FFEB55']
-            colormap = {}
-            for idx, engine in enumerate(df_bench['engine'].unique()):
-                colormap[engine] = colors[idx % len(colors)]
-            colormap['vLLM'] = '#2F5BA1'
-            colormap['TGI'] = '#FF9D00'
             i = 0
             with ExitStack() as stack:
                 for k, v in metrics.items():
                     if i % 2 == 0:
                         stack.close()
                         gs = stack.enter_context(gr.Row())
-                    line_plots.append(
+                    line_plots_bench.append(
                         {"component": gr.LinePlot(default_df, label=f'{v.title}', x="rate", y=k,
                                                   color="engine", y_title=v.y_title, x_title=v.x_title,
                                                   color_map=colormap),
@@ -238,14 +254,38 @@ if __name__ == '__main__':
                     pd.DataFrame(),
                     elem_classes=["summary"],
                 )
-        for component in [device_bench, device_ci, model, commit_ref, commit_compare]:
-            component.change(update_app, [device_bench, device_ci, model, commit_ref, commit_compare],
-                             [item["component"] for item in line_plots] + [table, comparison_table])
-        gr.on([plot["component"].select for plot in line_plots], select_region, [device_bench, model],
-              outputs=[item["component"] for item in line_plots])
-        gr.on([plot["component"].double_click for plot in line_plots], reset_region, None,
-              outputs=[item["component"] for item in line_plots])
-        demo.load(update_app, [device_bench, device_ci, model, commit_ref, commit_compare],
-                  [item["component"] for item in line_plots] + [table, comparison_table])
+            with gr.Row():
+                model_ci = gr.Dropdown(list(models_ci), label="Select model", value=models_ci[0])
+            i = 0
+            with ExitStack() as stack:
+                for k, v in metrics.items():
+                    if i % 2 == 0:
+                        stack.close()
+                        gs = stack.enter_context(gr.Row())
+                    line_plots_ci.append(
+                        {"component": gr.LinePlot(default_df, label=f'{v.title}', x="rate", y=k,
+                                                  color="version", y_title=v.y_title, x_title=v.x_title),
+                         "model": model_ci.value,
+                         "device": device_ci,
+                         "metric": k
+                         },
+                    )
+                    i += 1
+        # for component in [device_bench, device_ci, model, commit_ref, commit_compare]:
+        #     component.change(update_app, [device_bench, device_ci, model, commit_ref, commit_compare],
+        #                      [item["component"] for item in line_plots_bench] + [table, comparison_table])
+        for component in [device_bench, model]:
+            component.change(update_bench, [device_bench, model],
+                             [item["component"] for item in line_plots_bench] + [table])
+        for component in [device_ci, model_ci, commit_ref, commit_compare]:
+            component.change(update_ci, [device_ci, model_ci, commit_ref, commit_compare],
+                             [item["component"] for item in line_plots_ci] + [comparison_table])
+        gr.on([plot["component"].select for plot in line_plots_bench], select_region, [device_bench, model],
+              outputs=[item["component"] for item in line_plots_bench])
+        gr.on([plot["component"].double_click for plot in line_plots_bench], reset_region, None,
+              outputs=[item["component"] for item in line_plots_bench])
+        demo.load(load_demo, [device_bench, model, device_ci, model_ci, commit_ref, commit_compare],
+                  [item["component"] for item in line_plots_bench] + [table] + [item["component"] for item in
+                                                                                line_plots_ci] + [comparison_table])
 
     demo.launch()

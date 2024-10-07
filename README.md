@@ -8,19 +8,18 @@ Benchmarks using constant arrival rate or constant virtual user count.
 ## Table of contents
 
 <!-- TOC -->
-
 * [Text Generation Inference benchmarking tool](#text-generation-inference-benchmarking-tool)
-    * [Table of contents](#table-of-contents)
-    * [TODO](#todo)
-    * [Get started](#get-started)
-        * [Run a benchmark](#run-a-benchmark)
-        * [Configure your benchmark](#configure-your-benchmark)
-            * [Benchmark mode](#benchmark-mode)
-            * [Dataset configuration](#dataset-configuration)
-            * [Prompt configuration](#prompt-configuration)
-    * [Development](#development)
-    * [Frequently Asked Questions](#frequently-asked-questions)
-
+  * [Table of contents](#table-of-contents)
+  * [TODO](#todo)
+  * [Get started](#get-started)
+    * [Run a benchmark](#run-a-benchmark)
+    * [Configure your benchmark](#configure-your-benchmark)
+      * [Benchmark mode](#benchmark-mode)
+      * [Dataset configuration](#dataset-configuration)
+      * [Prompt configuration](#prompt-configuration)
+    * [Decode options](#decode-options)
+  * [Development](#development)
+  * [Frequently Asked Questions](#frequently-asked-questions)
 <!-- TOC -->
 
 ## TODO
@@ -46,7 +45,7 @@ $ docker run \
     -it \
     --net host \
     -v $(pwd):/opt/text-generation-inference-benchmark/results \
-    registry.internal.huggingface.tech/api-inference/text-generation-inference-benchmark:latest \
+    ghcr.io/huggingface/text-generation-inference-benchmark:latest \
     text-generation-inference-benchmark \
     --tokenizer-name "Qwen/Qwen2-7B" \
     --max-vus 800 \
