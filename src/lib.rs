@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use chrono::Local;
 use log::{debug, error, info, Level, LevelFilter};
+use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
 use writers::BenchmarkReportWriter;
@@ -50,8 +51,18 @@ pub async fn run(run_config: RunConfiguration,
     info!("Starting benchmark");
     // set process system limits
     sysinfo::set_open_files_limit(0);
+    // initialize tokenizer
+    let mut params = FromPretrainedParameters::default();
+    params.auth_token = run_config.hf_token.clone();
+    let tokenizer = match Tokenizer::from_pretrained(run_config.tokenizer_name.clone(), Some(params)) {
+        Ok(tokenizer) => tokenizer,
+        Err(e) => {
+            return Err(anyhow::anyhow!("Error loading tokenizer: {e}"));
+        }
+    };
+    let tokenizer = Arc::new(tokenizer);
     // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
-    let backend = OpenAITextGenerationBackend::new("".to_string(), run_config.url.clone(), run_config.tokenizer_name.clone());
+    let backend = OpenAITextGenerationBackend::try_new("".to_string(), run_config.url.clone(), run_config.tokenizer_name.clone(), tokenizer)?;
 
     let config = BenchmarkConfig {
         max_vus: run_config.max_vus,

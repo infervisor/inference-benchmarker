@@ -30,6 +30,7 @@ Benchmarks using constant arrival rate or constant virtual user count.
 - [ ] Allow for multi-turn prompts
 - [ ] Push results to Optimum benchmark backend
 - [X] Script to generate plots from results
+- [X] Add support for multiple tokens in stream chunks (when speculation is active)
 
 ## Get started
 
@@ -149,6 +150,7 @@ $ make build
 
   **Constant virtual user count** is a closed loop model where the server's response time dictates the number of
   iterations. **Constant arrival rate** is an open-loop model more representative of real-life workloads.
+
 
 * **What is the influence of CUDA graphs?**
   CUDA graphs are used to optimize the GPU usage by minimizing the overhead of launching kernels. This can lead to

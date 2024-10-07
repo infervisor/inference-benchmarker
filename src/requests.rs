@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicI64;
 use tokio::sync::mpsc::Sender;
 use reqwest_eventsource::{Error, Event, EventSource};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use rand_distr::Distribution;
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use futures_util::StreamExt;
@@ -53,6 +53,7 @@ pub struct OpenAITextGenerationBackend {
     pub base_url: String,
     pub model_name: String,
     pub client: reqwest::Client,
+    pub tokenizer: Arc<Tokenizer>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -84,16 +85,18 @@ pub struct OpenAITextGenerationRequest {
     pub messages: Vec<OpenAITextGenerationMessage>,
     pub max_tokens: Option<u64>,
     pub stream: bool,
+    pub stop: Option<String>,
 }
 
 impl OpenAITextGenerationBackend {
-    pub fn new(api_key: String, base_url: String, model_name: String) -> Self {
-        Self {
+    pub fn try_new(api_key: String, base_url: String, model_name: String, tokenizer: Arc<Tokenizer>) -> anyhow::Result<Self> {
+        Ok(Self {
             client: reqwest::Client::new(),
             api_key,
             base_url,
             model_name,
-        }
+            tokenizer,
+        })
     }
 }
 
@@ -125,6 +128,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
             messages,
             max_tokens: request.num_decode_tokens,
             stream: true,
+            stop: None,
         };
         let req = self.client.post(url)
             .header("Authorization", format!("Bearer {token}", token = self.api_key))
@@ -157,15 +161,24 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                         }
                     };
                     let choices = oai_response.choices;
+                    let content = choices[0].clone().delta.unwrap().content;
+                    if content.is_empty() { // skip empty responses
+                        continue;
+                    }
+                    // we need to count the number of tokens generated as each delta chunk may contain multiple tokens
+                    // that's the case with vLLM chunked prefill or speculative decoding
+                    let num_tokens = self.tokenizer.encode(content.clone(), false).unwrap().len() as u64;
+                    if num_tokens > 1 {
+                        warn!("Generated more than one token: {num_tokens}", num_tokens = num_tokens);
+                    }
                     match choices[0].clone().finish_reason {
                         None => {
-                            aggregated_response.add_tokens(1);
-                            final_response += &*choices[0].clone().delta.unwrap().content;
+                            aggregated_response.add_tokens(num_tokens);
+                            final_response += content.as_str();
                         }
                         Some(_) => {
-                            aggregated_response.add_tokens(1);
+                            aggregated_response.add_tokens(num_tokens);
                             aggregated_response.stop();
-                            let content = choices[0].clone().delta.unwrap().content;
                             trace!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens:?}, response: {message}", prompt = request.prompt, max_tokens = request.num_decode_tokens,message = &content);
                         }
                     };
@@ -460,6 +473,8 @@ impl TextGenerationAggregatedResponse {
     fn add_tokens(&mut self, num_tokens: u64) {
         self.num_generated_tokens += num_tokens;
         let time_to_generate = self.last_received_token_time.elapsed();
+        // make the assumption that when returned simultaneously, tokens were generated at a constant rate
+        time_to_generate.checked_div(num_tokens as u32).unwrap();
         self.last_received_token_time = std::time::Instant::now();
         self.times_to_tokens.push(time_to_generate);
     }
