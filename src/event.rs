@@ -1,6 +1,6 @@
-use std::time::{Duration, Instant};
 use crossterm::event;
 use crossterm::event::KeyEvent;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 
 pub enum AppEvent {
@@ -8,7 +8,6 @@ pub enum AppEvent {
     Key(KeyEvent),
     Resize,
 }
-
 
 pub async fn terminal_event_task(
     fps: u32,

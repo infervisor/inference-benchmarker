@@ -1,24 +1,29 @@
+use crate::benchmark::Event as BenchmarkEvent;
+use crate::event::{terminal_event_task, AppEvent};
+use crate::flux::{Action, AppState, Dispatcher, Store};
+use crate::scheduler::ExecutorType;
+use crate::BenchmarkConfig;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::text::Span;
+use ratatui::widgets::ListDirection::BottomToTop;
+use ratatui::widgets::{Cell, Dataset, List, ListItem, Row, Table};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Alignment, Rect},
+    style::Stylize as OtherStylize,
+    symbols,
+    symbols::border,
+    text::{Line, Text},
+    widgets::{block::Title, Block, Paragraph, Widget},
+    DefaultTerminal, Frame,
+};
 use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{buffer::Buffer, layout::{Alignment, Rect}, style::Stylize as OtherStylize, symbols::border, text::{Line, Text}, widgets::{
-    block::{Title},
-    Block, Paragraph, Widget,
-}, DefaultTerminal, Frame, symbols};
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::text::Span;
-use ratatui::widgets::{Cell, Dataset, List, ListItem, Row, Table};
-use ratatui::widgets::ListDirection::BottomToTop;
-use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver};
-use crate::benchmark::Event as BenchmarkEvent;
-use crate::BenchmarkConfig;
-use crate::event::{AppEvent, terminal_event_task};
-use crate::flux::{Action, AppState, Dispatcher, Store};
-use crate::scheduler::ExecutorType;
-
+use tokio::sync::{broadcast, mpsc};
 
 pub struct App {
     exit: bool,
@@ -37,18 +42,17 @@ pub async fn run_console(
     let (app_tx, app_rx) = mpsc::channel(8);
     // Create event task
     let stop_receiver_signal = stop_sender.subscribe();
-    tokio::spawn(terminal_event_task(
-        250,
-        app_tx,
-        stop_receiver_signal,
-    ));
+    tokio::spawn(terminal_event_task(250, app_tx, stop_receiver_signal));
 
     let mut app = App::new(benchmark_config, app_rx, stop_sender.clone());
-    app.dispatcher.lock().expect("lock").dispatch(Action::LogMessage(LogMessageUI {
-        message: "Starting benchmark".to_string(),
-        level: LogLevel::Info,
-        timestamp: chrono::Utc::now(),
-    }));
+    app.dispatcher
+        .lock()
+        .expect("lock")
+        .dispatch(Action::LogMessage(LogMessageUI {
+            message: "Starting benchmark".to_string(),
+            level: LogLevel::Info,
+            timestamp: chrono::Utc::now(),
+        }));
     let dispatcher = app.dispatcher.clone();
     let mut stop_receiver_signal = stop_sender.subscribe();
     let event_thread = tokio::spawn(async move {
@@ -83,20 +87,17 @@ pub async fn run_console(
                                 level: LogLevel::Info,
                                 timestamp: chrono::Utc::now(),
                             }));
-                            match event.results {
-                                Some(results) => {
-                                    let (successful_requests,failed_requests) = (results.successful_requests() as u64,results.failed_requests() as u64);
-                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
-                                        id: event.id,
-                                        status: BenchmarkStatus::Completed,
-                                        progress: 100.0,
-                                        throughput: event.request_throughput.map_or("0".to_string(), |e| format!("{e:.2}")),
-                                        successful_requests,
-                                        failed_requests,
-                                    }));
-                                    dispatcher.lock().expect("lock").dispatch(Action::AddBenchmarkResults(results));
-                                }
-                                None => {}
+                            if let Some(results) = event.results {
+                                let (successful_requests,failed_requests) = (results.successful_requests() as u64,results.failed_requests() as u64);
+                                dispatcher.lock().expect("lock").dispatch(Action::AddBenchmark(BenchmarkUI {
+                                    id: event.id,
+                                    status: BenchmarkStatus::Completed,
+                                    progress: 100.0,
+                                    throughput: event.request_throughput.map_or("0".to_string(), |e| format!("{e:.2}")),
+                                    successful_requests,
+                                    failed_requests,
+                                }));
+                                dispatcher.lock().expect("lock").dispatch(Action::AddBenchmarkResults(results));
                             }
                         }
                         BenchmarkEvent::Message(event) => {
@@ -143,7 +144,11 @@ pub async fn run_console(
 }
 
 impl App {
-    pub fn new(benchmark_config: BenchmarkConfig, receiver: Receiver<AppEvent>, stop_sender: Sender<()>) -> App {
+    pub fn new(
+        benchmark_config: BenchmarkConfig,
+        receiver: Receiver<AppEvent>,
+        stop_sender: Sender<()>,
+    ) -> App {
         let store = Arc::from(Mutex::new(Store::new()));
         let dispatcher = Arc::from(Mutex::new(Dispatcher::new(store.clone())));
         App {
@@ -171,17 +176,18 @@ impl App {
         match self.receiver.recv().await {
             None => Err(io::Error::new(io::ErrorKind::Other, "No event")),
             Some(event) => match event {
-                AppEvent::Tick => { Ok(()) }
+                AppEvent::Tick => Ok(()),
                 AppEvent::Key(key_event) => self.handle_key_event(key_event),
-                AppEvent::Resize => { Ok(()) }
-            }
+                AppEvent::Resize => Ok(()),
+            },
         }
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> io::Result<()> {
         match key_event {
             KeyEvent {
-                code: KeyCode::Char('q'), ..
+                code: KeyCode::Char('q'),
+                ..
             } => self.exit(),
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -197,47 +203,67 @@ impl App {
     }
 
     fn create_datasets(&self, state: AppState) -> HashMap<String, Vec<(f64, f64)>> {
-        let token_throughput_rate = state.results.iter().filter_map(|r| {
-            match r.executor_type() {
+        let token_throughput_rate = state
+            .results
+            .iter()
+            .filter_map(|r| match r.executor_type() {
                 ExecutorType::ConstantArrivalRate => {
                     let throughput = r.token_throughput_secs().unwrap_or(0.0);
                     Some((r.executor_config().rate.unwrap(), throughput))
                 }
-                ExecutorType::ConstantVUs => None
-            }
-        }).collect::<Vec<_>>();
-        let token_throughput_vus = state.results.iter().filter_map(|r| {
-            match r.executor_type() {
+                ExecutorType::ConstantVUs => None,
+            })
+            .collect::<Vec<_>>();
+        let token_throughput_vus = state
+            .results
+            .iter()
+            .filter_map(|r| match r.executor_type() {
                 ExecutorType::ConstantVUs => {
                     let throughput = r.token_throughput_secs().unwrap_or(0.0);
                     Some((r.executor_config().max_vus as f64, throughput))
                 }
-                ExecutorType::ConstantArrivalRate => None
-            }
-        }).collect::<Vec<_>>();
-        let inter_token_latency_rate = state.results.iter().filter_map(|r| {
-            match r.executor_type() {
+                ExecutorType::ConstantArrivalRate => None,
+            })
+            .collect::<Vec<_>>();
+        let inter_token_latency_rate = state
+            .results
+            .iter()
+            .filter_map(|r| match r.executor_type() {
                 ExecutorType::ConstantArrivalRate => {
-                    let latency = r.inter_token_latency_avg().unwrap_or_default().as_secs_f64();
+                    let latency = r
+                        .inter_token_latency_avg()
+                        .unwrap_or_default()
+                        .as_secs_f64();
                     Some((r.executor_config().rate.unwrap(), latency))
                 }
-                ExecutorType::ConstantVUs => None
-            }
-        }).collect::<Vec<_>>();
-        let inter_token_latency_vus = state.results.iter().filter_map(|r| {
-            match r.executor_type() {
+                ExecutorType::ConstantVUs => None,
+            })
+            .collect::<Vec<_>>();
+        let inter_token_latency_vus = state
+            .results
+            .iter()
+            .filter_map(|r| match r.executor_type() {
                 ExecutorType::ConstantVUs => {
-                    let latency = r.inter_token_latency_avg().unwrap_or_default().as_secs_f64();
+                    let latency = r
+                        .inter_token_latency_avg()
+                        .unwrap_or_default()
+                        .as_secs_f64();
                     Some((r.executor_config().max_vus as f64, latency))
                 }
-                ExecutorType::ConstantArrivalRate => None
-            }
-        }).collect::<Vec<_>>();
+                ExecutorType::ConstantArrivalRate => None,
+            })
+            .collect::<Vec<_>>();
         HashMap::from([
             ("token_throughput_rate".to_string(), token_throughput_rate),
             ("token_throughput_vus".to_string(), token_throughput_vus),
-            ("inter_token_latency_rate".to_string(), inter_token_latency_rate),
-            ("inter_token_latency_vus".to_string(), inter_token_latency_vus),
+            (
+                "inter_token_latency_rate".to_string(),
+                inter_token_latency_rate,
+            ),
+            (
+                "inter_token_latency_vus".to_string(),
+                inter_token_latency_vus,
+            ),
         ])
     }
 }
@@ -249,30 +275,15 @@ impl Widget for &App {
 
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Length(1),
-                    Constraint::Min(20),
-                ]
-            )
+            .constraints([Constraint::Length(1), Constraint::Min(20)])
             .split(area);
         let bottom_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Percentage(50),
-                    Constraint::Percentage(50)
-                ]
-            )
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(main_layout[1]);
         let steps_graph_layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(
-                [
-                    Constraint::Percentage(35),
-                    Constraint::Percentage(65),
-                ]
-            )
+            .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(bottom_layout[0]);
         // LOGS
         let logs_title = Title::from("Logs".bold());
@@ -280,29 +291,41 @@ impl Widget for &App {
             .title(logs_title.alignment(Alignment::Center))
             .border_set(border::THICK);
         List::new(
-            state.messages.iter().rev().map(|m| {
-                let level_span = match m.level {
-                    LogLevel::Info => Span::raw(m.level.to_string().to_uppercase()).green().bold(),
-                    LogLevel::Warning => Span::raw(m.level.to_string().to_uppercase()).yellow().bold(),
-                    LogLevel::Error => Span::raw(m.level.to_string().to_uppercase()).red().bold(),
-                };
-                let content = Line::from(vec![
-                    m.formatted_timestamp().clone().gray(),
-                    Span::raw(" "),
-                    level_span,
-                    Span::raw(" "),
-                    Span::raw(m.message.to_string()).bold(),
-                ]);
-                ListItem::new(content)
-            }).collect::<Vec<_>>())
-            .direction(BottomToTop)
-            .block(logs_block)
-            .render(bottom_layout[1], buf);
+            state
+                .messages
+                .iter()
+                .rev()
+                .map(|m| {
+                    let level_span = match m.level {
+                        LogLevel::Info => {
+                            Span::raw(m.level.to_string().to_uppercase()).green().bold()
+                        }
+                        LogLevel::Warning => Span::raw(m.level.to_string().to_uppercase())
+                            .yellow()
+                            .bold(),
+                        LogLevel::Error => {
+                            Span::raw(m.level.to_string().to_uppercase()).red().bold()
+                        }
+                    };
+                    let content = Line::from(vec![
+                        m.formatted_timestamp().clone().gray(),
+                        Span::raw(" "),
+                        level_span,
+                        Span::raw(" "),
+                        Span::raw(m.message.to_string()).bold(),
+                    ]);
+                    ListItem::new(content)
+                })
+                .collect::<Vec<_>>(),
+        )
+        .direction(BottomToTop)
+        .block(logs_block)
+        .render(bottom_layout[1], buf);
 
         // BENCHMARK config
         let rate_mode = match self.benchmark_config.rates {
-            None => { "Automatic".to_string() }
-            Some(_) => { "Manual".to_string() }
+            None => "Automatic".to_string(),
+            Some(_) => "Manual".to_string(),
         };
         let config_text = Text::from(vec![Line::from(vec![
             format!("Benchmark: {kind} | Max VUs: {max_vus} | Duration: {duration} sec | Rates: {rates} | Warmup: {warmup} sec",
@@ -312,29 +335,39 @@ impl Widget for &App {
                     rates = rate_mode,
                     warmup = self.benchmark_config.warmup_duration.as_secs_f64()).white().bold(),
         ])]);
-        Paragraph::new(config_text.clone())
-            .render(main_layout[0], buf);
+        Paragraph::new(config_text.clone()).render(main_layout[0], buf);
 
         // STEPS
         let steps_block_title = Title::from("Benchmark steps".bold());
         let steps_block = Block::bordered()
             .title(steps_block_title.alignment(Alignment::Center))
             .border_set(border::THICK);
-        let step_rows = state.benchmarks.iter().map(|b| {
-            let error_rate = if b.failed_requests > 0 {
-                format!("{:4.0}%", b.failed_requests as f64 / (b.failed_requests + b.successful_requests) as f64 * 100.).light_red().bold()
-            } else {
-                format!("{:4.0}%", 0).to_string().white()
-            };
-            let cells = vec![
-                b.id.clone().white(),
-                b.status.to_string().white(),
-                format!("{:4.0}%", b.progress).white(),
-                error_rate,
-                format!("{:>6.6} req/sec avg", b.throughput).green().bold(),
-            ];
-            Row::new(cells)
-        }).collect::<Vec<_>>();
+        let step_rows = state
+            .benchmarks
+            .iter()
+            .map(|b| {
+                let error_rate = if b.failed_requests > 0 {
+                    format!(
+                        "{:4.0}%",
+                        b.failed_requests as f64
+                            / (b.failed_requests + b.successful_requests) as f64
+                            * 100.
+                    )
+                    .light_red()
+                    .bold()
+                } else {
+                    format!("{:4.0}%", 0).to_string().white()
+                };
+                let cells = vec![
+                    b.id.clone().white(),
+                    b.status.to_string().white(),
+                    format!("{:4.0}%", b.progress).white(),
+                    error_rate,
+                    format!("{:>6.6} req/sec avg", b.throughput).green().bold(),
+                ];
+                Row::new(cells)
+            })
+            .collect::<Vec<_>>();
         let widths = [
             Constraint::Length(30),
             Constraint::Length(10),
@@ -360,14 +393,12 @@ impl Widget for &App {
             .title(graphs_block_title.alignment(Alignment::Center))
             .border_set(border::THICK);
         let binding = data.get("token_throughput_rate").unwrap().clone();
-        let datasets = vec![
-            Dataset::default()
-                .name("Token throughput rate".to_string())
-                .marker(symbols::Marker::Dot)
-                .graph_type(ratatui::widgets::GraphType::Scatter)
-                .style(ratatui::style::Style::default().fg(ratatui::style::Color::LightMagenta))
-                .data(&*binding)
-        ];
+        let datasets = vec![Dataset::default()
+            .name("Token throughput rate".to_string())
+            .marker(symbols::Marker::Dot)
+            .graph_type(ratatui::widgets::GraphType::Scatter)
+            .style(ratatui::style::Style::default().fg(ratatui::style::Color::LightMagenta))
+            .data(&binding)];
         let (xmax, ymax) = get_max_bounds(&binding, (10.0, 100.0));
         let x_axis = ratatui::widgets::Axis::default()
             .title("Arrival rate (req/s)".to_string())
@@ -388,17 +419,26 @@ impl Widget for &App {
     }
 }
 
-fn get_max_bounds(data: &Vec<(f64, f64)>, default_max: (f64, f64)) -> (f64, f64) {
-    let xmax = data.iter().map(|(x, _)| x).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&default_max.0);
-    let ymax = data.iter().map(|(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&default_max.1);
+fn get_max_bounds(data: &[(f64, f64)], default_max: (f64, f64)) -> (f64, f64) {
+    let xmax = data
+        .iter()
+        .map(|(x, _)| x)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(&default_max.0);
+    let ymax = data
+        .iter()
+        .map(|(_, y)| y)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(&default_max.1);
     (*xmax, *ymax)
 }
 
 fn get_axis_labels(min: f64, max: f64, num_labels: u32) -> Vec<String> {
     let step = (max - min) / num_labels as f64;
-    (0..num_labels).map(|i| format!("{:.2}", min + i as f64 * step)).collect()
+    (0..num_labels)
+        .map(|i| format!("{:.2}", min + i as f64 * step))
+        .collect()
 }
-
 
 #[allow(dead_code)]
 #[derive(Clone, strum_macros::Display)]

@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use crate::results::BenchmarkResults;
+use std::sync::{Arc, Mutex};
 
 // Flux pattern
 #[derive(Clone)]
@@ -9,12 +9,10 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     pub(crate) fn new(store: Arc<Mutex<Store>>) -> Self {
-        Self {
-            store,
-        }
+        Self { store }
     }
     pub(crate) fn dispatch(&mut self, action: Action) {
-        let _ = self.store.lock().unwrap().update(action);
+        self.store.lock().unwrap().update(action);
     }
 }
 
@@ -42,9 +40,7 @@ pub struct Store {
 impl Store {
     pub(crate) fn new() -> Self {
         let state = AppState::new();
-        Self {
-            state,
-        }
+        Self { state }
     }
 
     fn update(&mut self, action: Action) {
@@ -52,7 +48,11 @@ impl Store {
             Action::LogMessage(message) => self.state.messages.push(message),
             Action::AddBenchmark(benchmark) => {
                 // add or update benchmark
-                let index = self.state.benchmarks.iter().position(|b| b.id == benchmark.id);
+                let index = self
+                    .state
+                    .benchmarks
+                    .iter()
+                    .position(|b| b.id == benchmark.id);
                 match index {
                     Some(i) => {
                         self.state.benchmarks[i] = benchmark;
@@ -63,7 +63,11 @@ impl Store {
                 }
             }
             Action::AddBenchmarkResults(results) => {
-                let index = self.state.results.iter_mut().position(|b| b.id == results.id);
+                let index = self
+                    .state
+                    .results
+                    .iter_mut()
+                    .position(|b| b.id == results.id);
                 match index {
                     Some(i) => {
                         self.state.results[i] = results;

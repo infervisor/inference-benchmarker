@@ -1,14 +1,14 @@
+use crate::requests::{TextGenerationBackend, TextRequestGenerator, TokenizeOptions};
+use crate::results::{BenchmarkReport, BenchmarkResults};
+use crate::scheduler::{ExecutorType, SchedulerProgress};
+use crate::{executors, scheduler};
+use log::{debug, info};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use log::{debug, info};
-use serde::Serialize;
-use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::sync::mpsc::{Receiver, Sender};
-use crate::requests::{TextGenerationBackend, TextRequestGenerator, TokenizeOptions};
-use crate::{executors, scheduler};
-use crate::results::{BenchmarkReport, BenchmarkResults};
-use crate::scheduler::{ExecutorType, SchedulerProgress};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 const THROUGHPUT_BUDGET: f64 = 1.2; // sweep up to 120% of max throughput
 
@@ -77,29 +77,35 @@ pub struct BenchmarkConfig {
 
 impl BenchmarkConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.max_vus <= 0 {
+        if self.max_vus == 0 {
             return Err(anyhow::anyhow!("max_vus must be greater than 0"));
         }
-        if self.duration.as_secs() <= 0 {
+        if self.duration.as_secs() == 0 {
             return Err(anyhow::anyhow!("duration must be greater than 0"));
         }
-        if self.warmup_duration.as_secs() <= 0 {
+        if self.warmup_duration.as_secs() == 0 {
             return Err(anyhow::anyhow!("warmup_duration must be greater than 0"));
         }
         match self.benchmark_kind {
             BenchmarkKind::Throughput => {
                 if self.rates.is_some() {
-                    return Err(anyhow::anyhow!("rates must not be specified for throughput benchmark"));
+                    return Err(anyhow::anyhow!(
+                        "rates must not be specified for throughput benchmark"
+                    ));
                 }
             }
             BenchmarkKind::Sweep => {
                 if self.rates.is_some() {
-                    return Err(anyhow::anyhow!("rates must not be specified for sweep benchmark"));
+                    return Err(anyhow::anyhow!(
+                        "rates must not be specified for sweep benchmark"
+                    ));
                 }
             }
             BenchmarkKind::Rate => {
                 if self.rates.is_none() {
-                    return Err(anyhow::anyhow!("rates must be specified for rate benchmark"));
+                    return Err(anyhow::anyhow!(
+                        "rates must be specified for rate benchmark"
+                    ));
                 }
             }
         }
@@ -113,7 +119,13 @@ pub struct BenchmarkProgress {
 }
 
 impl Benchmark {
-    pub fn new(config: BenchmarkConfig, backend: Box<dyn TextGenerationBackend + Send + Sync>, requests: Arc<Mutex<dyn TextRequestGenerator + Send>>, event_bus: mpsc::UnboundedSender<Event>, stop_sender: broadcast::Sender<()>) -> Benchmark {
+    pub fn new(
+        config: BenchmarkConfig,
+        backend: Box<dyn TextGenerationBackend + Send + Sync>,
+        requests: Arc<Mutex<dyn TextRequestGenerator + Send>>,
+        event_bus: mpsc::UnboundedSender<Event>,
+        stop_sender: broadcast::Sender<()>,
+    ) -> Benchmark {
         Benchmark {
             start_time: None,
             end_time: None,
@@ -149,7 +161,10 @@ impl Benchmark {
         }
         self.end_time = Some(tokio::time::Instant::now());
         self.event_bus.send(Event::Message(MessageEvent {
-            message: format!("Benchmark complete in {:?}", self.duration().expect("duration exists")),
+            message: format!(
+                "Benchmark complete in {:?}",
+                self.duration().expect("duration exists")
+            ),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;
@@ -165,7 +180,10 @@ impl Benchmark {
     }
 
     async fn handle_progress(&self, id: String) -> Sender<Option<SchedulerProgress>> {
-        let (tx, mut rx): (Sender<Option<SchedulerProgress>>, Receiver<Option<SchedulerProgress>>) = mpsc::channel(8);
+        let (tx, mut rx): (
+            Sender<Option<SchedulerProgress>>,
+            Receiver<Option<SchedulerProgress>>,
+        ) = mpsc::channel(8);
         let event_bus = self.event_bus.clone();
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
@@ -178,15 +196,17 @@ impl Benchmark {
                             id: id.clone(),
                             progress,
                         };
-                        let _ = event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
-                            id: progress_evt.id,
-                            scheduler_type: ExecutorType::ConstantVUs,
-                            request_throughput: Some(progress_evt.progress.requests_throughput),
-                            progress: progress_evt.progress.progress,
-                            successful_requests: progress_evt.progress.successful_requests,
-                            failed_requests: progress_evt.progress.failed_requests,
-                            results: None,
-                        })).unwrap();
+                        event_bus
+                            .send(Event::BenchmarkProgress(BenchmarkEvent {
+                                id: progress_evt.id,
+                                scheduler_type: ExecutorType::ConstantVUs,
+                                request_throughput: Some(progress_evt.progress.requests_throughput),
+                                progress: progress_evt.progress.progress,
+                                successful_requests: progress_evt.progress.successful_requests,
+                                failed_requests: progress_evt.progress.failed_requests,
+                                results: None,
+                            }))
+                            .unwrap();
                     }
                 }
             }
@@ -214,11 +234,19 @@ impl Benchmark {
         let tx = self.handle_progress(id.clone()).await;
 
         // start scheduler
-        let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
-            max_vus: 1,
-            duration: self.config.warmup_duration,
-            rate: None,
-        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
+        let mut scheduler = scheduler::Scheduler::new(
+            id,
+            self.backend.clone(),
+            ExecutorType::ConstantVUs,
+            executors::ExecutorConfig {
+                max_vus: 1,
+                duration: self.config.warmup_duration,
+                rate: None,
+            },
+            self.requests.clone(),
+            tx.clone(),
+            self.stop_sender.clone(),
+        );
         scheduler.run().await?;
 
         let results = scheduler.get_results().lock().await.clone();
@@ -260,11 +288,19 @@ impl Benchmark {
         let tx = self.handle_progress(id.clone()).await;
 
         // start scheduler
-        let mut scheduler = scheduler::Scheduler::new(id.clone(), self.backend.clone(), ExecutorType::ConstantVUs, executors::ExecutorConfig {
-            max_vus: self.config.max_vus,
-            duration: self.config.duration,
-            rate: None,
-        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
+        let mut scheduler = scheduler::Scheduler::new(
+            id.clone(),
+            self.backend.clone(),
+            ExecutorType::ConstantVUs,
+            executors::ExecutorConfig {
+                max_vus: self.config.max_vus,
+                duration: self.config.duration,
+                rate: None,
+            },
+            self.requests.clone(),
+            tx.clone(),
+            self.stop_sender.clone(),
+        );
         scheduler.run().await?;
         let results = scheduler.get_results().lock().await.clone();
         let rate = results.successful_request_rate().ok();
@@ -287,7 +323,6 @@ impl Benchmark {
     }
 
     pub async fn run_sweep(&mut self) -> anyhow::Result<()> {
-
         // run a throughput benchmark to retrieve the maximum throughput of server
         self.run_throughput().await?;
         // get the max throughput from the second benchmark result (first is warmup)
@@ -296,7 +331,10 @@ impl Benchmark {
         let max_tokens_throughput = throughput_results.token_throughput_secs()?;
         // notify event bus
         self.event_bus.send(Event::Message(MessageEvent {
-            message: format!("Max throughput detected at: {:.2} req/s | {:.2} tokens/s", max_throughput, max_tokens_throughput),
+            message: format!(
+                "Max throughput detected at: {:.2} req/s | {:.2} tokens/s",
+                max_throughput, max_tokens_throughput
+            ),
             timestamp: chrono::Utc::now(),
             level: log::Level::Info,
         }))?;
@@ -340,11 +378,19 @@ impl Benchmark {
         let tx = self.handle_progress(id.clone()).await;
 
         // start scheduler
-        let mut scheduler = scheduler::Scheduler::new(id, self.backend.clone(), scheduler::ExecutorType::ConstantArrivalRate, executors::ExecutorConfig {
-            max_vus: self.config.max_vus,
-            duration: self.config.duration,
-            rate: Some(rate),
-        }, self.requests.clone(), tx.clone(), self.stop_sender.clone());
+        let mut scheduler = scheduler::Scheduler::new(
+            id,
+            self.backend.clone(),
+            scheduler::ExecutorType::ConstantArrivalRate,
+            executors::ExecutorConfig {
+                max_vus: self.config.max_vus,
+                duration: self.config.duration,
+                rate: Some(rate),
+            },
+            self.requests.clone(),
+            tx.clone(),
+            self.stop_sender.clone(),
+        );
         scheduler.run().await?;
         let results = scheduler.get_results().lock().await.clone();
         self.report.add_benchmark_result(results.clone());
@@ -365,5 +411,3 @@ impl Benchmark {
         Ok(())
     }
 }
-
-

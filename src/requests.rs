@@ -1,19 +1,18 @@
-use std::path::PathBuf;
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicI64;
-use tokio::sync::mpsc::Sender;
-use reqwest_eventsource::{Error, Event, EventSource};
+use futures_util::StreamExt;
+use hf_hub::api::sync::ApiBuilder;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, warn};
 use rand_distr::Distribution;
-use tokenizers::{FromPretrainedParameters, Tokenizer};
-use futures_util::StreamExt;
-use hf_hub::api::sync::{ApiBuilder};
-use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::split;
 use rayon::prelude::*;
+use reqwest_eventsource::{Error, Event, EventSource};
 use serde::{Deserialize, Serialize};
-
+use std::path::PathBuf;
+use std::sync::atomic::AtomicI64;
+use std::sync::{Arc, Mutex};
+use tokenizers::{FromPretrainedParameters, Tokenizer};
+use tokio::sync::mpsc::Sender;
 
 #[derive(Debug, Clone)]
 pub struct TextGenerationRequest {
@@ -25,7 +24,11 @@ pub struct TextGenerationRequest {
 
 #[async_trait]
 pub trait TextGenerationBackend: TextGenerationBackendClone {
-    async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationAggregatedResponse>);
+    async fn generate(
+        &self,
+        request: Arc<TextGenerationRequest>,
+        sender: Sender<TextGenerationAggregatedResponse>,
+    );
 }
 
 pub trait TextGenerationBackendClone {
@@ -89,7 +92,12 @@ pub struct OpenAITextGenerationRequest {
 }
 
 impl OpenAITextGenerationBackend {
-    pub fn try_new(api_key: String, base_url: String, model_name: String, tokenizer: Arc<Tokenizer>) -> anyhow::Result<Self> {
+    pub fn try_new(
+        api_key: String,
+        base_url: String,
+        model_name: String,
+        tokenizer: Arc<Tokenizer>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             client: reqwest::Client::new(),
             api_key,
@@ -102,16 +110,18 @@ impl OpenAITextGenerationBackend {
 
 #[async_trait]
 impl TextGenerationBackend for OpenAITextGenerationBackend {
-    async fn generate(&self, request: Arc<TextGenerationRequest>, sender: Sender<TextGenerationAggregatedResponse>) {
+    async fn generate(
+        &self,
+        request: Arc<TextGenerationRequest>,
+        sender: Sender<TextGenerationAggregatedResponse>,
+    ) {
         let url = format!("{base_url}/v1/chat/completions", base_url = self.base_url);
         let mut aggregated_response = TextGenerationAggregatedResponse::default();
         let messages = match &request.system_prompt {
-            None => vec![
-                OpenAITextGenerationMessage {
-                    role: "user".to_string(),
-                    content: request.prompt.clone(),
-                }
-            ],
+            None => vec![OpenAITextGenerationMessage {
+                role: "user".to_string(),
+                content: request.prompt.clone(),
+            }],
             Some(system_prompt) => vec![
                 OpenAITextGenerationMessage {
                     role: "system".to_string(),
@@ -120,8 +130,8 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 OpenAITextGenerationMessage {
                     role: "user".to_string(),
                     content: request.prompt.clone(),
-                }
-            ]
+                },
+            ],
         };
         let body = OpenAITextGenerationRequest {
             model: self.model_name.clone(),
@@ -130,8 +140,13 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
             stream: true,
             stop: None,
         };
-        let req = self.client.post(url)
-            .header("Authorization", format!("Bearer {token}", token = self.api_key))
+        let req = self
+            .client
+            .post(url)
+            .header(
+                "Authorization",
+                format!("Bearer {token}", token = self.api_key),
+            )
             .json(&serde_json::json!(body));
         // start timer
         aggregated_response.start(request.num_prompt_tokens);
@@ -151,25 +166,31 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                         break;
                     }
                     // deserialize message data
-                    let oai_response: OpenAITextGenerationResponse = match serde_json::from_str(&message.data) {
-                        Ok(response) => response,
-                        Err(e) => {
-                            error!("Error deserializing OpenAI API response: {e}", e = e);
-                            aggregated_response.fail();
-                            es.close();
-                            break;
-                        }
-                    };
+                    let oai_response: OpenAITextGenerationResponse =
+                        match serde_json::from_str(&message.data) {
+                            Ok(response) => response,
+                            Err(e) => {
+                                error!("Error deserializing OpenAI API response: {e}", e = e);
+                                aggregated_response.fail();
+                                es.close();
+                                break;
+                            }
+                        };
                     let choices = oai_response.choices;
                     let content = choices[0].clone().delta.unwrap().content;
-                    if content.is_empty() { // skip empty responses
+                    if content.is_empty() {
+                        // skip empty responses
                         continue;
                     }
                     // we need to count the number of tokens generated as each delta chunk may contain multiple tokens
                     // that's the case with vLLM chunked prefill or speculative decoding
-                    let num_tokens = self.tokenizer.encode(content.clone(), false).unwrap().len() as u64;
+                    let num_tokens =
+                        self.tokenizer.encode(content.clone(), false).unwrap().len() as u64;
                     if num_tokens > 1 {
-                        warn!("Generated more than one token: {num_tokens}", num_tokens = num_tokens);
+                        warn!(
+                            "Generated more than one token: {num_tokens}",
+                            num_tokens = num_tokens
+                        );
                     }
                     match choices[0].clone().finish_reason {
                         None => {
@@ -181,7 +202,11 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             // check that the response has the expected number of tokens if specified
                             if let Some(num_decode_tokens) = request.num_decode_tokens {
                                 if aggregated_response.num_generated_tokens != num_decode_tokens {
-                                    warn!("Expected {expected} tokens, got {actual}", expected = num_decode_tokens, actual = aggregated_response.num_generated_tokens);
+                                    warn!(
+                                        "Expected {expected} tokens, got {actual}",
+                                        expected = num_decode_tokens,
+                                        actual = aggregated_response.num_generated_tokens
+                                    );
                                     aggregated_response.fail();
                                     continue;
                                 }
@@ -193,14 +218,27 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 }
                 Err(e) => {
                     match e {
-                        Error::Utf8(_) => { aggregated_response.fail(); }
-                        Error::Parser(_) => { aggregated_response.fail(); }
-                        Error::Transport(_) => { aggregated_response.fail(); }
-                        Error::InvalidContentType(_, _) => { aggregated_response.fail(); }
-                        Error::InvalidStatusCode(_, _) => { aggregated_response.fail(); }
-                        Error::InvalidLastEventId(_) => { aggregated_response.fail(); }
+                        Error::Utf8(_) => {
+                            aggregated_response.fail();
+                        }
+                        Error::Parser(_) => {
+                            aggregated_response.fail();
+                        }
+                        Error::Transport(_) => {
+                            aggregated_response.fail();
+                        }
+                        Error::InvalidContentType(_, _) => {
+                            aggregated_response.fail();
+                        }
+                        Error::InvalidStatusCode(_, _) => {
+                            aggregated_response.fail();
+                        }
+                        Error::InvalidLastEventId(_) => {
+                            aggregated_response.fail();
+                        }
                         Error::StreamEnded => {
-                            if aggregated_response.num_generated_tokens == 0 { // server sent no data
+                            if aggregated_response.num_generated_tokens == 0 {
+                                // server sent no data
                                 aggregated_response.fail();
                             }
                         }
@@ -208,8 +246,11 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     es.close();
                 }
             };
-        };
-        sender.send(aggregated_response.clone()).await.expect("Error sending response to channel");
+        }
+        sender
+            .send(aggregated_response.clone())
+            .await
+            .expect("Error sending response to channel");
         //debug!("Final response: {response}", response = final_response);
     }
 }
@@ -255,10 +296,24 @@ impl TokenizeOptions {
     }
 }
 
+impl Default for TokenizeOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConversationTextRequestGenerator {
-    pub fn load(filepath: PathBuf, tokenizer: String, prompt_tokenize_opts: Option<TokenizeOptions>, decode_tokenize_opts: Option<TokenizeOptions>, hf_token: Option<String>) -> anyhow::Result<Self> {
-        let mut params = FromPretrainedParameters::default();
-        params.auth_token = hf_token;
+    pub fn load(
+        filepath: PathBuf,
+        tokenizer: String,
+        prompt_tokenize_opts: Option<TokenizeOptions>,
+        decode_tokenize_opts: Option<TokenizeOptions>,
+        hf_token: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let params = FromPretrainedParameters {
+            auth_token: hf_token,
+            ..Default::default()
+        };
         let tokenizer = match Tokenizer::from_pretrained(tokenizer, Some(params)) {
             Ok(tokenizer) => tokenizer,
             Err(e) => {
@@ -271,84 +326,126 @@ impl ConversationTextRequestGenerator {
         let data: Vec<ConversationEntry> = serde_json::from_str(&input).expect("Unable to parse input file. Check that it is valid JSON and matches the expected format.");
         // generate requests
         let requests: Arc<Mutex<Vec<TextGenerationRequest>>> = Arc::from(Mutex::from(Vec::new()));
-        info!("Generating requests from {filepath}", filepath = filepath.display().to_string());
+        info!(
+            "Generating requests from {filepath}",
+            filepath = filepath.display().to_string()
+        );
         let bar = ProgressBar::new(data.len() as u64);
-        bar.set_style(ProgressStyle::with_template("Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
-            .unwrap());
+        bar.set_style(
+            ProgressStyle::with_template(
+                "Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+            )
+            .unwrap(),
+        );
         split(data, entry_splitter).for_each(|subrange| {
             for entry in subrange {
                 bar.inc(1);
-                if entry.conversations.len() == 0 {
+                if entry.conversations.is_empty() {
                     continue;
                 }
-                let system_prompt = entry.conversations.iter().find(|c| c.role == "system").map(|c| c.content.clone());
+                let system_prompt = entry
+                    .conversations
+                    .iter()
+                    .find(|c| c.role == "system")
+                    .map(|c| c.content.clone());
                 let system_prompt_tokens = match system_prompt {
                     Some(ref prompt) => {
-                        let (_, num_tokens) = match tokenize_prompt(prompt.clone(), tokenizer.clone(), None) {
-                            Ok((prompt, num_tokens)) => (prompt, num_tokens),
-                            Err(e) => {
-                                debug!("Error tokenizing system prompt: {e}");
-                                return;
-                            }
-                        };
+                        let (_, num_tokens) =
+                            match tokenize_prompt(prompt.clone(), tokenizer.clone(), None) {
+                                Ok((prompt, num_tokens)) => (prompt, num_tokens),
+                                Err(e) => {
+                                    debug!("Error tokenizing system prompt: {e}");
+                                    return;
+                                }
+                            };
                         num_tokens
                     }
                     None => 0,
                 };
-                entry.conversations.iter().filter(|c| c.role == "user").for_each(|c| {
-                    let prompt = c.content.clone();
-                    let num_decode_tokens = decode_tokenize_opts.clone().map_or_else(|| None, |opts| Some(sample_num_tokens(opts.num_tokens, opts.min_tokens, opts.max_tokens, opts.variance)));
-                    match &prompt_tokenize_opts {
-                        None => {
-                            let (_, num_tokens) = match tokenize_prompt(prompt.clone(), tokenizer.clone(), None) {
-                                Ok((prompt, num_tokens)) => (prompt, num_tokens),
-                                Err(e) => {
-                                    debug!("Error tokenizing prompt: {e}");
-                                    return;
-                                }
-                            };
-                            requests.lock().unwrap().push(TextGenerationRequest {
-                                prompt,
-                                num_prompt_tokens: num_tokens + system_prompt_tokens,
-                                num_decode_tokens,
-                                system_prompt: system_prompt.clone(),
-                            });
+                entry
+                    .conversations
+                    .iter()
+                    .filter(|c| c.role == "user")
+                    .for_each(|c| {
+                        let prompt = c.content.clone();
+                        let num_decode_tokens = decode_tokenize_opts.clone().map_or_else(
+                            || None,
+                            |opts| {
+                                Some(sample_num_tokens(
+                                    opts.num_tokens,
+                                    opts.min_tokens,
+                                    opts.max_tokens,
+                                    opts.variance,
+                                ))
+                            },
+                        );
+                        match &prompt_tokenize_opts {
+                            None => {
+                                let (_, num_tokens) = match tokenize_prompt(
+                                    prompt.clone(),
+                                    tokenizer.clone(),
+                                    None,
+                                ) {
+                                    Ok((prompt, num_tokens)) => (prompt, num_tokens),
+                                    Err(e) => {
+                                        debug!("Error tokenizing prompt: {e}");
+                                        return;
+                                    }
+                                };
+                                requests.lock().unwrap().push(TextGenerationRequest {
+                                    prompt,
+                                    num_prompt_tokens: num_tokens + system_prompt_tokens,
+                                    num_decode_tokens,
+                                    system_prompt: system_prompt.clone(),
+                                });
+                            }
+                            Some(options) => {
+                                let num_tokens = options.num_tokens;
+                                let min_tokens = options.min_tokens;
+                                let max_tokens = options.max_tokens;
+                                let variance = options.variance;
+                                // compute number of tokens to generate using a Gaussian distribution
+                                let num_tokens =
+                                    sample_num_tokens(num_tokens, min_tokens, max_tokens, variance);
+                                let sampled_prompt = match tokenize_prompt(
+                                    prompt.clone(),
+                                    tokenizer.clone(),
+                                    Some(num_tokens),
+                                ) {
+                                    Ok(prompt) => prompt,
+                                    Err(e) => {
+                                        debug!("Error tokenizing prompt: {e}");
+                                        return;
+                                    }
+                                };
+                                requests.lock().unwrap().push(TextGenerationRequest {
+                                    prompt: sampled_prompt.0,
+                                    num_prompt_tokens: num_tokens + system_prompt_tokens,
+                                    num_decode_tokens,
+                                    system_prompt: system_prompt.clone(),
+                                });
+                            }
                         }
-                        Some(options) => {
-                            let num_tokens = options.num_tokens;
-                            let min_tokens = options.min_tokens;
-                            let max_tokens = options.max_tokens;
-                            let variance = options.variance;
-                            // compute number of tokens to generate using a Gaussian distribution
-                            let num_tokens = sample_num_tokens(num_tokens, min_tokens, max_tokens, variance);
-                            let sampled_prompt = match tokenize_prompt(prompt.clone(), tokenizer.clone(), Some(num_tokens)) {
-                                Ok(prompt) => prompt,
-                                Err(e) => {
-                                    debug!("Error tokenizing prompt: {e}");
-                                    return;
-                                }
-                            };
-                            requests.lock().unwrap().push(TextGenerationRequest {
-                                prompt: sampled_prompt.0,
-                                num_prompt_tokens: num_tokens + system_prompt_tokens,
-                                num_decode_tokens,
-                                system_prompt: system_prompt.clone(),
-                            });
-                        }
-                    }
-                });
+                    });
                 // TODO: check that we have enough requests
             }
         });
         let requests = requests.lock().unwrap();
-        info!("Generated {num_requests} requests", num_requests = requests.len());
+        info!(
+            "Generated {num_requests} requests",
+            num_requests = requests.len()
+        );
         Ok(Self {
             current_index: Arc::from(AtomicI64::new(0)),
             requests: requests.to_vec(),
         })
     }
 
-    pub fn download_dataset(repo_name: String, filename: String, hf_token: Option<String>) -> anyhow::Result<PathBuf> {
+    pub fn download_dataset(
+        repo_name: String,
+        filename: String,
+        hf_token: Option<String>,
+    ) -> anyhow::Result<PathBuf> {
         let api = ApiBuilder::new().with_token(hf_token).build()?;
         let repo = api.dataset(repo_name);
         let dataset = repo.get(&filename)?;
@@ -368,7 +465,9 @@ fn sample_num_tokens(num_tokens: u64, min_tokens: u64, max_tokens: u64, variance
     num_tokens
 }
 
-fn entry_splitter(gen: Vec<ConversationEntry>) -> (Vec<ConversationEntry>, Option<Vec<ConversationEntry>>) {
+fn entry_splitter(
+    gen: Vec<ConversationEntry>,
+) -> (Vec<ConversationEntry>, Option<Vec<ConversationEntry>>) {
     if gen.len() <= 2 {
         return (gen, None);
     }
@@ -381,24 +480,34 @@ fn entry_splitter(gen: Vec<ConversationEntry>) -> (Vec<ConversationEntry>, Optio
 
 impl TextRequestGenerator for ConversationTextRequestGenerator {
     fn generate_request(&mut self) -> TextGenerationRequest {
-        let idx = self.current_index.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let idx = self
+            .current_index
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if idx >= (self.requests.len() - 1) as i64 {
-            self.current_index.store(0, std::sync::atomic::Ordering::SeqCst);
+            self.current_index
+                .store(0, std::sync::atomic::Ordering::SeqCst);
         }
         self.requests[idx as usize].clone()
     }
 }
 
-
-fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: Option<u64>) -> anyhow::Result<(String, u64)> {
-    let prompt_tokens = tokenizer.encode(prompt.clone(), false).map_err(|_| anyhow::anyhow!("Error tokenizing prompt"))?;
+fn tokenize_prompt(
+    prompt: String,
+    tokenizer: Arc<Tokenizer>,
+    num_tokens: Option<u64>,
+) -> anyhow::Result<(String, u64)> {
+    let prompt_tokens = tokenizer
+        .encode(prompt.clone(), false)
+        .map_err(|_| anyhow::anyhow!("Error tokenizing prompt"))?;
     match num_tokens {
-        None => {
-            Ok((prompt, prompt_tokens.len() as u64))
-        }
+        None => Ok((prompt, prompt_tokens.len() as u64)),
         Some(num_tokens) => {
             if prompt_tokens.len() < num_tokens as usize {
-                return Err(anyhow::anyhow!(format!("Prompt is too short to tokenize: {}<{}", prompt_tokens.len(), num_tokens)));
+                return Err(anyhow::anyhow!(format!(
+                    "Prompt is too short to tokenize: {}<{}",
+                    prompt_tokens.len(),
+                    num_tokens
+                )));
             }
             // let's do a binary search to find the right number of tokens
             let mut low = 1;
@@ -406,26 +515,33 @@ fn tokenize_prompt(prompt: String, tokenizer: Arc<Tokenizer>, num_tokens: Option
             let mut prompt_sub = String::new();
             while low < high {
                 let mid = (low + high) / 2;
-                prompt_sub = prompt.chars().skip((low - 1) as usize).take(high as usize).collect::<String>();
+                prompt_sub = prompt
+                    .chars()
+                    .skip((low - 1) as usize)
+                    .take(high as usize)
+                    .collect::<String>();
                 let tokenized_len = match tokenizer.encode(prompt_sub.clone(), false) {
                     Ok(tokens) => tokens.len(),
                     Err(_) => {
                         return Err(anyhow::anyhow!("Error tokenizing prompt"));
                     }
                 };
-                if tokenized_len == num_tokens as usize {
-                    return Ok((prompt_sub.to_string(), num_tokens));
-                } else if tokenized_len > num_tokens as usize {
-                    high = mid;
-                } else {
-                    low = mid + 1;
+                match tokenized_len.cmp(&(num_tokens as usize)) {
+                    std::cmp::Ordering::Equal => {
+                        return Ok((prompt_sub.to_string(), num_tokens));
+                    }
+                    std::cmp::Ordering::Greater => {
+                        high = mid;
+                    }
+                    std::cmp::Ordering::Less => {
+                        low = mid + 1;
+                    }
                 }
             }
             Ok((prompt_sub.to_string(), prompt_tokens.len() as u64))
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct TextGenerationAggregatedResponse {
@@ -493,30 +609,15 @@ impl TextGenerationAggregatedResponse {
 
     pub fn time_to_first_token(&self) -> Option<std::time::Duration> {
         match self.start_time {
-            Some(_) => {
-                match self.times_to_tokens.first() {
-                    Some(time_to_first_token) => {
-                        Some(time_to_first_token.clone())
-                    }
-                    None => {
-                        None
-                    }
-                }
-            }
-            None => {
-                None
-            }
+            Some(_) => self.times_to_tokens.first().copied(),
+            None => None,
         }
     }
 
     pub fn inter_token_latency(&self) -> Option<std::time::Duration> {
         match self.times_to_tokens.len() {
-            0 => {
-                None
-            }
-            1 => {
-                Some(std::time::Duration::new(0, 0))
-            }
+            0 => None,
+            1 => Some(std::time::Duration::new(0, 0)),
             _ => {
                 let mut total_time = std::time::Duration::new(0, 0);
                 for i in 1..self.times_to_tokens.len() {
@@ -528,33 +629,22 @@ impl TextGenerationAggregatedResponse {
     }
     pub fn e2e_latency(&self) -> Option<std::time::Duration> {
         match self.start_time {
-            Some(start_time) => {
-                match self.end_time {
-                    Some(end_time) => {
-                        Some(end_time - start_time)
-                    }
-                    None => {
-                        None
-                    }
-                }
-            }
-            None => {
-                None
-            }
+            Some(start_time) => self.end_time.map(|end_time| end_time - start_time),
+            None => None,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::executors::ExecutorConfig;
+    use crate::results::BenchmarkResults;
+    use crate::scheduler::ExecutorType;
     use std::sync::atomic::AtomicU64;
     use std::thread::sleep;
     use std::time::Duration;
     use tokio::sync::RwLock;
-    use crate::executors::ExecutorConfig;
-    use crate::results::BenchmarkResults;
-    use crate::scheduler::ExecutorType;
-    use super::*;
 
     #[tokio::test]
     async fn test_openai_token_count() {
@@ -572,7 +662,13 @@ mod tests {
             .create_async().await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -589,11 +685,17 @@ mod tests {
         let t = tokio::spawn(async move {
             while let Some(item) = rx.recv().await {
                 let response = item;
-                num_tokens_clone.fetch_add(response.num_generated_tokens, std::sync::atomic::Ordering::SeqCst);
+                num_tokens_clone.fetch_add(
+                    response.num_generated_tokens,
+                    std::sync::atomic::Ordering::SeqCst,
+                );
             }
         });
         t.await.unwrap();
-        assert_eq!(num_tokens.load(std::sync::atomic::Ordering::SeqCst), 16 as u64);
+        assert_eq!(
+            num_tokens.load(std::sync::atomic::Ordering::SeqCst),
+            16 as u64
+        );
     }
 
     /// Test that the timings are correct
@@ -618,7 +720,13 @@ mod tests {
             .create_async().await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -630,7 +738,15 @@ mod tests {
         tokio::spawn(async move {
             backend.generate(request.clone(), tx.clone()).await;
         });
-        let results = BenchmarkResults::new("test".to_string(), ExecutorType::ConstantArrivalRate, ExecutorConfig { max_vus: 1, duration: Duration::from_secs(10), rate: None });
+        let results = BenchmarkResults::new(
+            "test".to_string(),
+            ExecutorType::ConstantArrivalRate,
+            ExecutorConfig {
+                max_vus: 1,
+                duration: Duration::from_secs(10),
+                rate: None,
+            },
+        );
         let results = Arc::new(RwLock::new(results));
         let results_clone = results.clone();
         let t = tokio::spawn(async move {
@@ -651,9 +767,29 @@ mod tests {
         let expected_inter_token_latency_avg = Duration::from_millis(31); // 16 tokens with a 500ms delay
         let inter_token_latency_overhead = Duration::from_millis(2);
         let expected_ttft = Duration::from_millis(3); // account for http overhead
-        assert!(e2e_latency_avg > expected_e2e_latency_avg && e2e_latency_avg < expected_e2e_latency_avg + e2e_timing_overhead, "e2e_latency_avg: {:?} < {:?} < {:?}", expected_e2e_latency_avg, e2e_latency_avg, expected_e2e_latency_avg + e2e_timing_overhead);
-        assert!(inter_token_latency_avg > expected_inter_token_latency_avg && inter_token_latency_avg < expected_inter_token_latency_avg + inter_token_latency_overhead, "inter_token_latency_avg: {:?} < {:?} < {:?}", expected_inter_token_latency_avg, inter_token_latency_avg, expected_inter_token_latency_avg + inter_token_latency_overhead);
-        assert!(ttft < expected_ttft, "TTFT: {:?} < {:?}", ttft, expected_ttft);
+        assert!(
+            e2e_latency_avg > expected_e2e_latency_avg
+                && e2e_latency_avg < expected_e2e_latency_avg + e2e_timing_overhead,
+            "e2e_latency_avg: {:?} < {:?} < {:?}",
+            expected_e2e_latency_avg,
+            e2e_latency_avg,
+            expected_e2e_latency_avg + e2e_timing_overhead
+        );
+        assert!(
+            inter_token_latency_avg > expected_inter_token_latency_avg
+                && inter_token_latency_avg
+                    < expected_inter_token_latency_avg + inter_token_latency_overhead,
+            "inter_token_latency_avg: {:?} < {:?} < {:?}",
+            expected_inter_token_latency_avg,
+            inter_token_latency_avg,
+            expected_inter_token_latency_avg + inter_token_latency_overhead
+        );
+        assert!(
+            ttft < expected_ttft,
+            "TTFT: {:?} < {:?}",
+            ttft,
+            expected_ttft
+        );
     }
 
     /// Test that server errors are handled correctly
@@ -663,13 +799,18 @@ mod tests {
         s.mock("POST", "/v1/chat/completions")
             .with_status(200)
             .with_header("content-type", "text/event-stream")
-            .with_chunked_body(|w| {
-                w.write_all(b"data: {\"error\": \"Internal server error\"}\n\n")
-            })
-            .create_async().await;
+            .with_chunked_body(|w| w.write_all(b"data: {\"error\": \"Internal server error\"}\n\n"))
+            .create_async()
+            .await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -703,13 +844,18 @@ mod tests {
         s.mock("POST", "/v1/chat/completions")
             .with_status(200)
             .with_header("content-type", "text/event-stream")
-            .with_chunked_body(|w| {
-                w.write_all(b"this is wrong\n\n")
-            })
-            .create_async().await;
+            .with_chunked_body(|w| w.write_all(b"this is wrong\n\n"))
+            .create_async()
+            .await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -743,13 +889,18 @@ mod tests {
         s.mock("POST", "/v1/chat/completions")
             .with_status(200)
             .with_header("content-type", "text/event-stream")
-            .with_chunked_body(|w| {
-                w.write_all(b"data: {\"foo\": \"bar\"}\n\n")
-            })
-            .create_async().await;
+            .with_chunked_body(|w| w.write_all(b"data: {\"foo\": \"bar\"}\n\n"))
+            .create_async()
+            .await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -791,7 +942,13 @@ mod tests {
             .create_async().await;
         let url = s.url();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new("".to_string(), url, "gpt2".to_string(), tokenizer).unwrap();
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+        )
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,

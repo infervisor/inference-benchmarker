@@ -1,11 +1,15 @@
-use std::sync::Arc;
-use log::{debug, trace, warn};
-use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
-use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
-use crate::requests::{TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator};
-use crate::results::BenchmarkResults;
-use tokio::sync::{broadcast, Mutex};
+use crate::executors::{
+    ConstantArrivalRateExecutor, ConstantVUsExecutor, Executor, ExecutorConfig,
+};
+use crate::requests::{
+    TextGenerationAggregatedResponse, TextGenerationBackend, TextRequestGenerator,
+};
 use crate::results::BenchmarkErrors::NoResponses;
+use crate::results::BenchmarkResults;
+use log::{debug, trace, warn};
+use std::sync::Arc;
+use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::{broadcast, Mutex};
 
 #[derive(Clone, strum_macros::Display)]
 pub enum ExecutorType {
@@ -30,25 +34,32 @@ pub struct SchedulerProgress {
 }
 
 impl Scheduler {
-    pub fn new(id: String,
-               backend: Box<dyn TextGenerationBackend + Send + Sync>,
-               executor_type: ExecutorType,
-               config: ExecutorConfig,
-               requests_generator: Arc<Mutex<dyn TextRequestGenerator + Send>>,
-               progress_tx: Sender<Option<SchedulerProgress>>,
-               stop_sender: broadcast::Sender<()>,
+    pub fn new(
+        id: String,
+        backend: Box<dyn TextGenerationBackend + Send + Sync>,
+        executor_type: ExecutorType,
+        config: ExecutorConfig,
+        requests_generator: Arc<Mutex<dyn TextRequestGenerator + Send>>,
+        progress_tx: Sender<Option<SchedulerProgress>>,
+        stop_sender: broadcast::Sender<()>,
     ) -> Scheduler {
         match executor_type {
-            ExecutorType::ConstantVUs => {
-                Scheduler {
-                    id: id.clone(),
-                    executor: Arc::from(Mutex::from(ConstantVUsExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone()))),
-                    results: Arc::from(Mutex::from(BenchmarkResults::new(id.clone(), ExecutorType::ConstantVUs, config))),
-                    requests_generator,
-                    progress_tx,
-                    stop_sender,
-                }
-            }
+            ExecutorType::ConstantVUs => Scheduler {
+                id: id.clone(),
+                executor: Arc::from(Mutex::from(ConstantVUsExecutor::new(
+                    backend.clone(),
+                    config.max_vus,
+                    config.duration,
+                ))),
+                results: Arc::from(Mutex::from(BenchmarkResults::new(
+                    id.clone(),
+                    ExecutorType::ConstantVUs,
+                    config,
+                ))),
+                requests_generator,
+                progress_tx,
+                stop_sender,
+            },
             ExecutorType::ConstantArrivalRate => {
                 if config.rate.is_none() {
                     panic!("Rate must be specified for ConstantArrivalRateExecutor");
@@ -56,8 +67,17 @@ impl Scheduler {
                 let rate = config.rate.unwrap();
                 Scheduler {
                     id: id.clone(),
-                    executor: Arc::from(Mutex::from(ConstantArrivalRateExecutor::new(backend.clone(), config.max_vus.clone(), config.duration.clone(), rate))),
-                    results: Arc::from(Mutex::from(BenchmarkResults::new(id.clone(), ExecutorType::ConstantArrivalRate, config))),
+                    executor: Arc::from(Mutex::from(ConstantArrivalRateExecutor::new(
+                        backend.clone(),
+                        config.max_vus,
+                        config.duration,
+                        rate,
+                    ))),
+                    results: Arc::from(Mutex::from(BenchmarkResults::new(
+                        id.clone(),
+                        ExecutorType::ConstantArrivalRate,
+                        config,
+                    ))),
                     requests_generator,
                     progress_tx,
                     stop_sender,
@@ -69,7 +89,10 @@ impl Scheduler {
     pub async fn run(&mut self) -> anyhow::Result<BenchmarkResults> {
         debug!("Starting scheduler '{}'", self.id);
         // add responses to the benchmark result as they arrive
-        let (tx, mut rx): (UnboundedSender<TextGenerationAggregatedResponse>, UnboundedReceiver<TextGenerationAggregatedResponse>) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx): (
+            UnboundedSender<TextGenerationAggregatedResponse>,
+            UnboundedReceiver<TextGenerationAggregatedResponse>,
+        ) = tokio::sync::mpsc::unbounded_channel();
         let results = self.results.clone();
         let progress_tx = self.progress_tx.clone();
         let mut stop_receiver = self.stop_sender.subscribe();
@@ -77,7 +100,6 @@ impl Scheduler {
             tokio::select! {
                 _ = stop_receiver.recv() => {
                     debug!("Received stop signal, stopping benchmark");
-                    return
                 }
                 _ = async{
                     while let Some(response) = rx.recv().await{
@@ -101,10 +123,18 @@ impl Scheduler {
                 }=>{}
             }
         });
-        self.executor.lock().await.run(self.requests_generator.clone(), tx, self.stop_sender.clone()).await;
+        self.executor
+            .lock()
+            .await
+            .run(
+                self.requests_generator.clone(),
+                tx,
+                self.stop_sender.clone(),
+            )
+            .await;
         warn!("{:?}", self.results.clone());
         if self.results.lock().await.successful_requests() == 0 {
-            return Err(anyhow::anyhow!(NoResponses));
+            Err(anyhow::anyhow!(NoResponses))
         } else {
             Ok(self.results.lock().await.clone())
         }

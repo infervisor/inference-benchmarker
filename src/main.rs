@@ -1,11 +1,11 @@
+use clap::error::ErrorKind::InvalidValue;
+use clap::{Error, Parser};
+use log::debug;
+use reqwest::Url;
 use std::collections::HashMap;
 use std::time::Duration;
-use clap::{Error, Parser};
-use clap::error::ErrorKind::InvalidValue;
-use log::{debug};
-use reqwest::Url;
-use tokio::sync::broadcast;
 use text_generation_inference_benchmark::{run, RunConfiguration, TokenizeOptions};
+use tokio::sync::broadcast;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -109,7 +109,10 @@ fn parse_key_val(s: &str) -> Result<HashMap<String, String>, Error> {
             return Err(Error::new(InvalidValue));
         }
         for i in 0..key_value.len() / 2 {
-            key_val_map.insert(key_value[i * 2].to_string(), key_value[i * 2 + 1].to_string());
+            key_val_map.insert(
+                key_value[i * 2].to_string(),
+                key_value[i * 2 + 1].to_string(),
+            );
         }
     }
     Ok(key_val_map)
@@ -130,8 +133,12 @@ fn parse_tokenizer_options(s: &str) -> Result<TokenizeOptions, Error> {
             "variance" => tokenizer_options.variance = key_value[1].parse::<u64>().unwrap(),
             _ => return Err(Error::new(InvalidValue)),
         }
-    };
-    if tokenizer_options.num_tokens == 0 || tokenizer_options.min_tokens == 0 || tokenizer_options.max_tokens == 0 || tokenizer_options.min_tokens > tokenizer_options.max_tokens {
+    }
+    if tokenizer_options.num_tokens == 0
+        || tokenizer_options.min_tokens == 0
+        || tokenizer_options.max_tokens == 0
+        || tokenizer_options.min_tokens > tokenizer_options.max_tokens
+    {
         return Err(Error::new(InvalidValue));
     }
     Ok(tokenizer_options)
@@ -145,9 +152,13 @@ async fn main() {
     // handle ctrl-c
     let stop_sender_clone = stop_sender.clone();
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for ctrl-c");
         debug!("Received stop signal, stopping benchmark");
-        stop_sender_clone.send(()).expect("Failed to send stop signal");
+        stop_sender_clone
+            .send(())
+            .expect("Failed to send stop signal");
     });
 
     let stop_sender_clone = stop_sender.clone();
@@ -176,9 +187,7 @@ async fn main() {
         extra_metadata: args.extra_meta.clone(),
     };
     let main_thread = tokio::spawn(async move {
-        match run(run_config,
-                  stop_sender_clone,
-        ).await {
+        match run(run_config, stop_sender_clone).await {
             Ok(_) => {}
             Err(e) => {
                 println!("Fatal: {:?}", e)

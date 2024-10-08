@@ -4,27 +4,27 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
+pub use crate::app::run_console;
+pub use crate::benchmark::{BenchmarkConfig, BenchmarkKind};
+use crate::benchmark::{Event, MessageEvent};
+use crate::requests::OpenAITextGenerationBackend;
+pub use crate::requests::TokenizeOptions;
 use chrono::Local;
 use log::{debug, error, info, Level, LevelFilter};
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
 use writers::BenchmarkReportWriter;
-pub use crate::app::run_console;
-use crate::benchmark::{Event, MessageEvent};
-pub use crate::benchmark::{BenchmarkConfig, BenchmarkKind};
-use crate::requests::OpenAITextGenerationBackend;
-pub use crate::requests::TokenizeOptions;
 
-mod requests;
-mod executors;
-mod tokens;
-mod scheduler;
-mod results;
-mod benchmark;
 mod app;
+mod benchmark;
 mod event;
+mod executors;
 mod flux;
+mod requests;
+mod results;
+mod scheduler;
+mod tokens;
 mod writers;
 
 pub struct RunConfiguration {
@@ -45,24 +45,30 @@ pub struct RunConfiguration {
     pub extra_metadata: Option<HashMap<String, String>>,
 }
 
-pub async fn run(run_config: RunConfiguration,
-                 stop_sender: Sender<()>,
-) -> anyhow::Result<()> {
+pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyhow::Result<()> {
     info!("Starting benchmark");
     // set process system limits
     sysinfo::set_open_files_limit(0);
     // initialize tokenizer
-    let mut params = FromPretrainedParameters::default();
-    params.auth_token = run_config.hf_token.clone();
-    let tokenizer = match Tokenizer::from_pretrained(run_config.tokenizer_name.clone(), Some(params)) {
-        Ok(tokenizer) => tokenizer,
-        Err(e) => {
-            return Err(anyhow::anyhow!("Error loading tokenizer: {e}"));
-        }
+    let params = FromPretrainedParameters {
+        auth_token: run_config.hf_token.clone(),
+        ..Default::default()
     };
+    let tokenizer =
+        match Tokenizer::from_pretrained(run_config.tokenizer_name.clone(), Some(params)) {
+            Ok(tokenizer) => tokenizer,
+            Err(e) => {
+                return Err(anyhow::anyhow!("Error loading tokenizer: {e}"));
+            }
+        };
     let tokenizer = Arc::new(tokenizer);
     // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
-    let backend = OpenAITextGenerationBackend::try_new("".to_string(), run_config.url.clone(), run_config.tokenizer_name.clone(), tokenizer)?;
+    let backend = OpenAITextGenerationBackend::try_new(
+        "".to_string(),
+        run_config.url.clone(),
+        run_config.tokenizer_name.clone(),
+        tokenizer,
+    )?;
 
     let config = BenchmarkConfig {
         max_vus: run_config.max_vus,
@@ -88,7 +94,10 @@ pub async fn run(run_config: RunConfiguration,
         let target = Box::new(File::create("log.txt").expect("Can't create file"));
         env_logger::Builder::new()
             .target(env_logger::Target::Pipe(target))
-            .filter(Some("text_generation_inference_benchmark"), LevelFilter::Debug)
+            .filter(
+                Some("text_generation_inference_benchmark"),
+                LevelFilter::Debug,
+            )
             .format(|buf, record| {
                 writeln!(
                     buf,
@@ -117,7 +126,7 @@ pub async fn run(run_config: RunConfiguration,
                     run_console(config_clone, rx, stop_sender_clone).await;
                 } else {
                     // consume the channel to avoid closed channel error
-                    while let Some(_) = rx.recv().await {}
+                    while rx.recv().await.is_some() {}
                 }
             } => {}
         }
@@ -130,10 +139,27 @@ pub async fn run(run_config: RunConfiguration,
         timestamp: chrono::Utc::now(),
         level: Level::Info,
     }));
-    let filepath = requests::ConversationTextRequestGenerator::download_dataset(run_config.dataset, run_config.dataset_file, run_config.hf_token.clone()).expect("Can't download dataset");
-    let requests = requests::ConversationTextRequestGenerator::load(filepath, run_config.tokenizer_name.clone(), run_config.prompt_options, run_config.decode_options, run_config.hf_token)?;
+    let filepath = requests::ConversationTextRequestGenerator::download_dataset(
+        run_config.dataset,
+        run_config.dataset_file,
+        run_config.hf_token.clone(),
+    )
+    .expect("Can't download dataset");
+    let requests = requests::ConversationTextRequestGenerator::load(
+        filepath,
+        run_config.tokenizer_name.clone(),
+        run_config.prompt_options,
+        run_config.decode_options,
+        run_config.hf_token,
+    )?;
 
-    let mut benchmark = benchmark::Benchmark::new(config.clone(), Box::new(backend), Arc::from(Mutex::from(requests)), tx.clone(), stop_sender.clone());
+    let mut benchmark = benchmark::Benchmark::new(
+        config.clone(),
+        Box::new(backend),
+        Arc::from(Mutex::from(requests)),
+        tx.clone(),
+        stop_sender.clone(),
+    );
     let mut stop_receiver = stop_sender.subscribe();
     tokio::select! {
         report = benchmark.run() => {
@@ -159,7 +185,8 @@ pub async fn run(run_config: RunConfiguration,
     }
     let _ = tx.send(Event::BenchmarkReportEnd);
     info!("Benchmark finished");
-    if !run_config.interactive { // quit app if not interactive
+    if !run_config.interactive {
+        // quit app if not interactive
         let _ = stop_sender.send(());
     }
     ui_thread.await.unwrap();

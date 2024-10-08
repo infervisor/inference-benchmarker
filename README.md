@@ -186,12 +186,14 @@ $ make build
 
 
 * **Why do I get high error rate when running `thoughput` benchmark?**
+  
   Throughput bench tries to saturate the server with a high request rate. The error rate is high because the server is
   not able to handle the request rate or rate limiting the requests.
   In the case of TGI, this is controlled by the `--max-concurrent-requests` option.
 
 
 * **What is the influence of CUDA graphs?**
+
   CUDA graphs are used to optimize the GPU usage by minimizing the overhead of launching kernels. This can lead to
   better performance in some cases, but can also lead to worse performance in others.
   If your CUDA graphs are not evenly distributed, you may see a performance drop at some request rates as batch size may
