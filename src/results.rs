@@ -46,11 +46,11 @@ impl BenchmarkResults {
     }
 
 
-    pub fn start_time(&self) -> Option<std::time::Instant> {
+    pub fn start_time(&self) -> Option<tokio::time::Instant> {
         self.aggregated_responses.first().map_or(None, |response| response.start_time)
     }
 
-    pub fn end_time(&self) -> Option<std::time::Instant> {
+    pub fn end_time(&self) -> Option<tokio::time::Instant> {
         self.aggregated_responses.last().map_or(None, |response| response.end_time)
     }
 
@@ -255,32 +255,32 @@ mod test {
     #[test]
     fn test_time_to_first_token_percentile() {
         let mut response1 = TextGenerationAggregatedResponse::default();
-        response1.start_time = Some(std::time::Instant::now());
-        response1.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+        response1.start_time = Some(tokio::time::Instant::now());
+        response1.end_time = Some(tokio::time::Instant::now() + tokio::time::Duration::from_millis(100));
         response1.num_prompt_tokens = 10;
         response1.num_generated_tokens = 100;
         response1.failed = false;
         response1.times_to_tokens = vec![Duration::from_millis(100), Duration::from_millis(200), Duration::from_millis(300), Duration::from_millis(400), Duration::from_millis(500)];
 
         let mut response2 = TextGenerationAggregatedResponse::default();
-        response2.start_time = Some(std::time::Instant::now());
-        response2.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
+        response2.start_time = Some(tokio::time::Instant::now());
+        response2.end_time = Some(tokio::time::Instant::now() + tokio::time::Duration::from_millis(200));
         response2.num_prompt_tokens = 10;
         response2.num_generated_tokens = 100;
         response2.failed = false;
         response2.times_to_tokens = vec![Duration::from_millis(600), Duration::from_millis(700), Duration::from_millis(800), Duration::from_millis(900), Duration::from_millis(1000)];
 
         let mut response3 = TextGenerationAggregatedResponse::default();
-        response3.start_time = Some(std::time::Instant::now());
-        response3.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(300));
+        response3.start_time = Some(tokio::time::Instant::now());
+        response3.end_time = Some(tokio::time::Instant::now() + tokio::time::Duration::from_millis(300));
         response3.num_prompt_tokens = 10;
         response3.num_generated_tokens = 100;
         response3.failed = false;
         response3.times_to_tokens = vec![Duration::from_millis(1100), Duration::from_millis(1200), Duration::from_millis(1300), Duration::from_millis(1400), Duration::from_millis(1500)];
 
         let mut response4 = TextGenerationAggregatedResponse::default();
-        response4.start_time = Some(std::time::Instant::now());
-        response4.end_time = Some(std::time::Instant::now() + std::time::Duration::from_millis(300));
+        response4.start_time = Some(tokio::time::Instant::now());
+        response4.end_time = Some(tokio::time::Instant::now() + tokio::time::Duration::from_millis(300));
         response4.num_prompt_tokens = 10;
         response4.num_generated_tokens = 100;
         response4.failed = false;

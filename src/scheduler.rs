@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 use log::{debug, trace, warn};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use crate::executors::{ConstantArrivalRateExecutor, Executor, ExecutorConfig, ConstantVUsExecutor};
@@ -91,7 +90,7 @@ impl Scheduler {
                         let mut result = result.lock().await;
                         result.add_response(response);
                         let expected_duration = result.executor_config().duration.as_secs_f64();
-                        let start_time = result.start_time().unwrap_or(Instant::now());
+                        let start_time = result.start_time().unwrap_or(tokio::time::Instant::now());
                         let _ = progress_tx.send(Some(SchedulerProgress {
                             progress: (100.0 * (1.0 - (expected_duration - start_time.elapsed().as_secs_f64()) / expected_duration)).min(100.0),
                             requests_throughput: result.successful_request_rate().unwrap_or_default(),

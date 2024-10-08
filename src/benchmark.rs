@@ -45,8 +45,8 @@ pub enum Event {
 }
 
 pub struct Benchmark {
-    start_time: Option<std::time::Instant>,
-    end_time: Option<std::time::Instant>,
+    start_time: Option<tokio::time::Instant>,
+    end_time: Option<tokio::time::Instant>,
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
     requests: Arc<Mutex<dyn TextRequestGenerator + Send>>,
     report: BenchmarkReport,
@@ -131,7 +131,7 @@ impl Benchmark {
     }
 
     pub async fn run(&mut self) -> anyhow::Result<BenchmarkReport> {
-        self.start_time = Some(std::time::Instant::now());
+        self.start_time = Some(tokio::time::Instant::now());
         self.report.start();
         info!("Prewarming backend");
         self.warmup().await?;
@@ -147,7 +147,7 @@ impl Benchmark {
                 self.run_rates().await?;
             }
         }
-        self.end_time = Some(std::time::Instant::now());
+        self.end_time = Some(tokio::time::Instant::now());
         self.event_bus.send(Event::Message(MessageEvent {
             message: format!("Benchmark complete in {:?}", self.duration().expect("duration exists")),
             timestamp: chrono::Utc::now(),
