@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
+use std::io;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use crate::benchmark::{Event, MessageEvent};
 use crate::requests::OpenAITextGenerationBackend;
 pub use crate::requests::TokenizeOptions;
 use chrono::Local;
+use crossterm::ExecutableCommand;
 use log::{debug, error, info, Level, LevelFilter};
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::broadcast::Sender;
@@ -26,6 +28,7 @@ mod results;
 mod scheduler;
 mod tokens;
 mod writers;
+mod table;
 
 pub struct RunConfiguration {
     pub url: String,
@@ -144,7 +147,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         run_config.dataset_file,
         run_config.hf_token.clone(),
     )
-    .expect("Can't download dataset");
+        .expect("Can't download dataset");
     let requests = requests::ConversationTextRequestGenerator::load(
         filepath,
         run_config.tokenizer_name.clone(),
@@ -189,6 +192,18 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         // quit app if not interactive
         let _ = stop_sender.send(());
     }
-    ui_thread.await.unwrap();
+    ui_thread.await?;
+
+    // Revert terminal to original view
+    io::stdout().execute(ratatui::crossterm::terminal::LeaveAlternateScreen)?;
+    ratatui::crossterm::terminal::disable_raw_mode()?;
+    io::stdout().execute(ratatui::crossterm::cursor::Show)?;
+
+    let report = benchmark.get_report();
+    let writer = BenchmarkReportWriter::new(config.clone(), report)?;
+    writer.stdout().await;
+
     Ok(())
 }
+
+

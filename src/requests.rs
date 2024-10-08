@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use hf_hub::api::sync::ApiBuilder;
@@ -302,6 +303,19 @@ impl Default for TokenizeOptions {
     }
 }
 
+impl Display for TokenizeOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "num_tokens={num_tokens},min_tokens={min_tokens},max_tokens={max_tokens},variance={variance}",
+            num_tokens = self.num_tokens,
+            min_tokens = self.min_tokens,
+            max_tokens = self.max_tokens,
+            variance = self.variance
+        )
+    }
+}
+
 impl ConversationTextRequestGenerator {
     pub fn load(
         filepath: PathBuf,
@@ -335,7 +349,7 @@ impl ConversationTextRequestGenerator {
             ProgressStyle::with_template(
                 "Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
             )
-            .unwrap(),
+                .unwrap(),
         );
         split(data, entry_splitter).for_each(|subrange| {
             for entry in subrange {
@@ -668,7 +682,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -726,7 +740,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -778,7 +792,7 @@ mod tests {
         assert!(
             inter_token_latency_avg > expected_inter_token_latency_avg
                 && inter_token_latency_avg
-                    < expected_inter_token_latency_avg + inter_token_latency_overhead,
+                < expected_inter_token_latency_avg + inter_token_latency_overhead,
             "inter_token_latency_avg: {:?} < {:?} < {:?}",
             expected_inter_token_latency_avg,
             inter_token_latency_avg,
@@ -810,7 +824,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -855,7 +869,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -900,7 +914,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -948,7 +962,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-        .unwrap();
+            .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,

@@ -1,5 +1,5 @@
 use crate::results::{BenchmarkReport, BenchmarkResults};
-use crate::{executors, BenchmarkConfig};
+use crate::{executors, table, BenchmarkConfig};
 use serde::Serialize;
 use std::path::Path;
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
@@ -111,6 +111,8 @@ pub struct BenchmarkReportWriter {
     start_time: String,
     end_time: String,
     system: SystemInfo,
+    #[serde(skip)]
+    report: BenchmarkReport,
 }
 
 impl BenchmarkReportWriter {
@@ -135,6 +137,7 @@ impl BenchmarkReportWriter {
                 .ok_or(anyhow::anyhow!("end_time not set"))?
                 .to_rfc3339(),
             system: SystemInfo::new(),
+            report,
         })
     }
     pub async fn json(&self, path: &Path) -> anyhow::Result<()> {
@@ -149,5 +152,12 @@ impl BenchmarkReportWriter {
         }
         fs::write(path, report).await?;
         Ok(())
+    }
+
+    pub async fn stdout(&self){
+        let param_table = table::parameters_table(self.config.clone());
+        println!("\n{param_table}\n");
+        let results_table = table::results_table(self.report.clone());
+        println!("\n{results_table}\n");
     }
 }

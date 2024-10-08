@@ -50,7 +50,7 @@ pub struct Benchmark {
     backend: Box<dyn TextGenerationBackend + Send + Sync>,
     requests: Arc<Mutex<dyn TextRequestGenerator + Send>>,
     report: BenchmarkReport,
-    config: BenchmarkConfig,
+    pub(crate) config: BenchmarkConfig,
     event_bus: mpsc::UnboundedSender<Event>,
     stop_sender: broadcast::Sender<()>,
 }

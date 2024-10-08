@@ -1,6 +1,6 @@
 use clap::error::ErrorKind::InvalidValue;
 use clap::{Error, Parser};
-use log::debug;
+use log::{debug, error};
 use reqwest::Url;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -17,7 +17,7 @@ struct Args {
     #[clap(default_value = "128", short, long, env)]
     max_vus: u64,
     /// The duration of each benchmark step
-    #[clap(default_value = "60s", short, long, env)]
+    #[clap(default_value = "120s", short, long, env)]
     #[arg(value_parser = parse_duration)]
     duration: Duration,
     /// A list of rates of requests to send per second (only valid for the ConstantArrivalRate benchmark).
@@ -51,9 +51,9 @@ struct Args {
     /// * max_tokens: maximum number of prompt tokens
     /// * variance: variance in the number of prompt tokens
     ///
-    /// Example: num_tokens=50,max_tokens=60,min_tokens=40,variance=10
+    /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
     #[clap(
-        default_value = "num_tokens=50,max_tokens=60,min_tokens=40,variance=10",
+        default_value = "num_tokens=200,max_tokens=210,min_tokens=190,variance=10",
         long,
         env,
         value_parser(parse_tokenizer_options)
@@ -67,9 +67,9 @@ struct Args {
     /// * max_tokens: maximum number of generated tokens
     /// * variance: variance in the number of generated tokens
     ///
-    /// Example: num_tokens=50,max_tokens=60,min_tokens=40,variance=10
+    /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
     #[clap(
-        default_value = "num_tokens=50,max_tokens=60,min_tokens=40,variance=10",
+        default_value = "num_tokens=200,max_tokens=210,min_tokens=190,variance=10",
         long,
         env,
         value_parser(parse_tokenizer_options)
@@ -190,6 +190,7 @@ async fn main() {
         match run(run_config, stop_sender_clone).await {
             Ok(_) => {}
             Err(e) => {
+                error!("Fatal: {:?}", e);
                 println!("Fatal: {:?}", e)
             }
         };

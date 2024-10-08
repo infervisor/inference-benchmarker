@@ -1,17 +1,18 @@
 # TGI Benchmark: A High-Performance Tool for Text Generation Model Benchmarking
 
-Benchmarking inference servers for text generation models presents unique challenges. 
-The performance of these models can vary greatly depending on factors like input prompts, 
+Benchmarking inference servers for text generation models presents unique challenges.
+The performance of these models can vary greatly depending on factors like input prompts,
 decoding strategies, hardware specifications, and server configurations.
 
-**TGI Benchmark** is designed to streamline this process by providing a comprehensive benchmarking tool 
-that evaluates the real-world performance of text generation models and servers. 
-With **TGI Benchmark**, you can easily test your model's throughput and efficiency under various workloads, 
+**TGI Benchmark** is designed to streamline this process by providing a comprehensive benchmarking tool
+that evaluates the real-world performance of text generation models and servers.
+With **TGI Benchmark**, you can easily test your model's throughput and efficiency under various workloads,
 identify performance bottlenecks, and optimize your deployment for production environments.
 
 It can be used to benchmark any text generation server that exposes an OpenAI-compliant API.
 
 ## Features
+
 * Broad Compatibility: Benchmarks any text generation server with an OpenAPI-compliant API.
 * Automatic Sweep Mode: Detects maximum throughput and sweeps in-between.
 * Open-Loop Benchmarking: Uses constant arrival rates to simulate real-world workloads.
@@ -40,13 +41,14 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
   * [TODO](#todo)
 <!-- TOC -->
 
-
 ## Get started
 
 ### Run a benchmark
 
 #### 1. Start an inference server
+
 **TGI**
+
 ```bash
 MODEL=meta-llama/Llama-3.1-8B-Instruct
 HF_TOKEN=<your HF READ token>
@@ -56,6 +58,7 @@ docker run --gpus all --shm-size 1g -p 8080:80 -e "HF_TOKEN=$HF_TOKEN" \
 ```
 
 **vLLM**
+
 ```bash
 MODEL=meta-llama/Llama-3.1-8B-Instruct
 HF_TOKEN=<your HF READ token>
@@ -86,8 +89,8 @@ $ docker run \
     --url http://localhost:8080 \
     --warmup 20s \
     --num-rates 10 \
-    --prompt-options "num_tokens=50,max_tokens=60,min_tokens=40,variance=10" \
-    --decode-options "num_tokens=50,max_tokens=60,min_tokens=40,variance=10"
+    --prompt-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
+    --decode-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" 
 ```
 
 Results will be saved in JSON format in current directory.
@@ -104,6 +107,32 @@ Available modes:
 - `sweep`: runs a sweep benchmark
 - `rate`: runs a benchmark at a fixed request rate
 - `throughput`: runs a benchmark at a fixed throughput (constant VUs)
+
+Example running a benchmark at a fixed request rates:
+
+```shell 
+MODEL=meta-llama/Llama-3.1-8B-Instruct
+HF_TOKEN=<your HF READ token>
+$ docker run \
+    --rm \
+    -it \
+    --net host \
+    -v $(pwd):/opt/text-generation-inference-benchmark/results \
+    -e "HF_TOKEN=$HF_TOKEN" \
+    ghcr.io/huggingface/text-generation-inference-benchmark:latest \
+    text-generation-inference-benchmark \
+    --tokenizer-name "meta-llama/Llama-3.1-8B-Instruct" \
+    --max-vus 800 \
+    --duration 120s \
+    --url http://localhost:8080 \
+    --warmup 30s \
+    --benchmark-kind rate \
+    --rates 1.0 \
+    --rates 5.0 \
+    --rates 10.0 \
+    --prompt-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
+    --decode-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10"
+```
 
 #### Dataset configuration
 
@@ -186,7 +215,7 @@ $ make build
 
 
 * **Why do I get high error rate when running `thoughput` benchmark?**
-  
+
   Throughput bench tries to saturate the server with a high request rate. The error rate is high because the server is
   not able to handle the request rate or rate limiting the requests.
   In the case of TGI, this is controlled by the `--max-concurrent-requests` option.
@@ -198,7 +227,6 @@ $ make build
   better performance in some cases, but can also lead to worse performance in others.
   If your CUDA graphs are not evenly distributed, you may see a performance drop at some request rates as batch size may
   fall in a bigger CUDA graph batch size leading to a lost of compute due to excessive padding.
-
 
 ## TODO
 
