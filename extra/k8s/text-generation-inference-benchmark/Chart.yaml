@@ -1,0 +1,6 @@
+apiVersion: v2
+name: text-generation-inference-benchmark
+description: A Helm chart to run a text generation inference benchmark
+type: application
+version: 0.1.0
+appVersion: "2.3.0"

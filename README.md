@@ -193,6 +193,19 @@ values, sampling token counts from a normal distribution with the specified vari
 --decode-options "num_tokens=50,max_tokens=60,min_tokens=40,variance=10"
 ```
 
+## Deploy on Kubernetes
+
+You can deploy the benchmarking tool on Kubernetes using the provided Helm chart.
+
+Review the values (especially model, HF token and resources), and install the chart:
+```shell
+$ helm install tgi-benchmark ./extra/k8s/text-generation-inference-benchmark
+```
+
+## Deploy on Slurm
+
+Slurm example is provided in `extra/slurm`.
+
 ## Development
 
 You need [Rust](https://rustup.rs/) installed to build the benchmarking tool.
