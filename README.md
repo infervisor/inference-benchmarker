@@ -13,7 +13,7 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
 
 ## Features
 
-* Broad Compatibility: Benchmarks any text generation server with an OpenAPI-compliant API.
+* Broad Compatibility: Benchmarks any text generation server with an OpenAPI-compliant chat API.
 * Automatic Sweep Mode: Detects maximum throughput and sweeps in-between.
 * Open-Loop Benchmarking: Uses constant arrival rates to simulate real-world workloads.
 * High-Performance: Built with Rust 🦀 for high-performance benchmarking.
