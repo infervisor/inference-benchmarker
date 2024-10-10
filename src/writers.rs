@@ -154,7 +154,7 @@ impl BenchmarkReportWriter {
         Ok(())
     }
 
-    pub async fn stdout(&self){
+    pub async fn stdout(&self) {
         let param_table = table::parameters_table(self.config.clone());
         println!("\n{param_table}\n");
         let results_table = table::results_table(self.report.clone());

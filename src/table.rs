@@ -1,18 +1,35 @@
-use tabled::builder::Builder;
-use crate::BenchmarkConfig;
 use crate::results::BenchmarkReport;
+use crate::BenchmarkConfig;
+use tabled::builder::Builder;
 
 pub fn parameters_table(benchmark: BenchmarkConfig) -> tabled::Table {
     let mut builder = Builder::default();
-    let rates = benchmark.rates.map_or("N/A".to_string(), |e| format!("{:?}", e));
-    let prompt_options = benchmark.prompt_options.map_or("N/A".to_string(), |e| format!("{}", e));
-    let decode_options = benchmark.decode_options.map_or("N/A".to_string(), |e| format!("{}", e));
-    let extra_metadata = benchmark.extra_metadata.map_or("N/A".to_string(), |e| format!("{:?}", e));
+    let rates = benchmark
+        .rates
+        .map_or("N/A".to_string(), |e| format!("{:?}", e));
+    let prompt_options = benchmark
+        .prompt_options
+        .map_or("N/A".to_string(), |e| format!("{}", e));
+    let decode_options = benchmark
+        .decode_options
+        .map_or("N/A".to_string(), |e| format!("{}", e));
+    let extra_metadata = benchmark
+        .extra_metadata
+        .map_or("N/A".to_string(), |e| format!("{:?}", e));
     builder.set_header(vec!["Parameter", "Value"]);
     builder.push_record(vec!["Max VUs", benchmark.max_vus.to_string().as_str()]);
-    builder.push_record(vec!["Duration", benchmark.duration.as_secs().to_string().as_str()]);
-    builder.push_record(vec!["Warmup Duration", benchmark.warmup_duration.as_secs().to_string().as_str()]);
-    builder.push_record(vec!["Benchmark Kind", benchmark.benchmark_kind.to_string().as_str()]);
+    builder.push_record(vec![
+        "Duration",
+        benchmark.duration.as_secs().to_string().as_str(),
+    ]);
+    builder.push_record(vec![
+        "Warmup Duration",
+        benchmark.warmup_duration.as_secs().to_string().as_str(),
+    ]);
+    builder.push_record(vec![
+        "Benchmark Kind",
+        benchmark.benchmark_kind.to_string().as_str(),
+    ]);
     builder.push_record(vec!["Rates", rates.as_str()]);
     builder.push_record(vec!["Num Rates", benchmark.num_rates.to_string().as_str()]);
     builder.push_record(vec!["Prompt Options", prompt_options.as_str()]);
@@ -26,20 +43,41 @@ pub fn parameters_table(benchmark: BenchmarkConfig) -> tabled::Table {
 
 pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
     let mut builder = Builder::default();
-    builder.set_header(vec!["Benchmark", "QPS", "E2E Latency", "TTFT", "ITL", "Throughput", "Error Rate"]);
+    builder.set_header(vec![
+        "Benchmark",
+        "QPS",
+        "E2E Latency",
+        "TTFT",
+        "ITL",
+        "Throughput",
+        "Error Rate",
+    ]);
     let results = benchmark.get_results();
     for result in results {
         let qps = format!("{:.2} req/s", result.successful_request_rate().unwrap());
         let e2e = format!("{:.2} sec", result.e2e_latency_avg().unwrap().as_secs_f64());
-        let ttft = format!("{:.2} ms", result.time_to_first_token_avg().unwrap().as_micros() as f64 / 1000.0);
-        let itl = format!("{:.2} ms", result.inter_token_latency_avg().unwrap().as_micros() as f64 / 1000.0);
+        let ttft = format!(
+            "{:.2} ms",
+            result.time_to_first_token_avg().unwrap().as_micros() as f64 / 1000.0
+        );
+        let itl = format!(
+            "{:.2} ms",
+            result.inter_token_latency_avg().unwrap().as_micros() as f64 / 1000.0
+        );
         let throughput = format!("{:.2} tokens/sec", result.token_throughput_secs().unwrap());
         let error_rate = result.failed_requests() / result.total_requests();
         let error_rate = format!("{:.2}%", error_rate as f64 * 100.0);
-        builder.push_record(vec![result.id.as_str(), qps.as_str(), e2e.as_str(), ttft.as_str(), itl.as_str(), throughput.as_str(), error_rate.as_str()]);
+        builder.push_record(vec![
+            result.id.as_str(),
+            qps.as_str(),
+            e2e.as_str(),
+            ttft.as_str(),
+            itl.as_str(),
+            throughput.as_str(),
+            error_rate.as_str(),
+        ]);
     }
     let mut table = builder.build();
-    table
-        .with(tabled::settings::Style::sharp());
+    table.with(tabled::settings::Style::sharp());
     table
 }

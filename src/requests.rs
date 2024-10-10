@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use hf_hub::api::sync::ApiBuilder;
@@ -9,6 +8,7 @@ use rayon::iter::split;
 use rayon::prelude::*;
 use reqwest_eventsource::{Error, Event, EventSource};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, Mutex};
@@ -354,7 +354,7 @@ impl ConversationTextRequestGenerator {
             ProgressStyle::with_template(
                 "Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
             )
-                .unwrap(),
+            .unwrap(),
         );
         split(data, entry_splitter).for_each(|subrange| {
             for entry in subrange {
@@ -687,7 +687,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -745,7 +745,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -797,7 +797,7 @@ mod tests {
         assert!(
             inter_token_latency_avg > expected_inter_token_latency_avg
                 && inter_token_latency_avg
-                < expected_inter_token_latency_avg + inter_token_latency_overhead,
+                    < expected_inter_token_latency_avg + inter_token_latency_overhead,
             "inter_token_latency_avg: {:?} < {:?} < {:?}",
             expected_inter_token_latency_avg,
             inter_token_latency_avg,
@@ -829,7 +829,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -874,7 +874,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -919,7 +919,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,
@@ -967,7 +967,7 @@ mod tests {
             "gpt2".to_string(),
             tokenizer,
         )
-            .unwrap();
+        .unwrap();
         let request = TextGenerationRequest {
             prompt: "Hello, world!".to_string(),
             num_prompt_tokens: 2,

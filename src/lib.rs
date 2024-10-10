@@ -26,9 +26,9 @@ mod flux;
 mod requests;
 mod results;
 mod scheduler;
+mod table;
 mod tokens;
 mod writers;
-mod table;
 
 pub struct RunConfiguration {
     pub url: String,
@@ -147,7 +147,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         run_config.dataset_file,
         run_config.hf_token.clone(),
     )
-        .expect("Can't download dataset");
+    .expect("Can't download dataset");
     let requests = requests::ConversationTextRequestGenerator::load(
         filepath,
         run_config.tokenizer_name.clone(),
@@ -167,7 +167,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
     tokio::select! {
         report = benchmark.run() => {
             match report {
-                Ok(results) => {
+                Ok(_) => {
                     let report = benchmark.get_report();
                     let path = format!("results/{}_{}.json",run_config.tokenizer_name.replace("/","_").replace(".","_"), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"));
                     let path=Path::new(&path);
@@ -204,5 +204,3 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
 
     Ok(())
 }
-
-
