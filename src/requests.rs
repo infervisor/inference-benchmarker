@@ -158,6 +158,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 Ok(Event::Open) => trace!("SSE connection opened"),
                 Ok(Event::Message(message)) => {
                     if message.data == "\n" || message.data == "[DONE]" {
+                        aggregated_response.stop();
                         continue;
                     }
                     if message.data.starts_with("{\"error\":") {
