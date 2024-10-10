@@ -36,6 +36,8 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
       * [Dataset configuration](#dataset-configuration)
       * [Prompt configuration](#prompt-configuration)
     * [Decode options](#decode-options)
+  * [Deploy on Kubernetes](#deploy-on-kubernetes)
+  * [Deploy on Slurm](#deploy-on-slurm)
   * [Development](#development)
   * [Frequently Asked Questions](#frequently-asked-questions)
   * [TODO](#todo)
@@ -240,6 +242,13 @@ $ make build
   better performance in some cases, but can also lead to worse performance in others.
   If your CUDA graphs are not evenly distributed, you may see a performance drop at some request rates as batch size may
   fall in a bigger CUDA graph batch size leading to a lost of compute due to excessive padding.
+
+* **I get less tokens generated than expected in a benchmark.**
+
+  Inference servers use `max_tokens` parameter to limit the number of tokens generated. If the model
+  generates an end-of-sequence token before reaching `max_tokens`, the generation will stop.
+  There is currently no way to guarantee a fixed number of tokens generated without modifying the inference server.
+  So you may have `(successful requests) * max_tokens < generated tokens`.
 
 ## TODO
 

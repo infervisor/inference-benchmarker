@@ -1,3 +1,4 @@
+{{- if .Values.tgi.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,7 +48,9 @@ spec:
           args:
             - "--model-id"
             - "{{ .Values.model_id }}"
-            {{- toYaml .Values.tgi.extra_args | nindent 12 }}
+            {{- with .Values.tgi.extra_args }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080
@@ -81,3 +84,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}
