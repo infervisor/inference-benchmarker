@@ -186,7 +186,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     // we need to count the number of tokens generated as each delta chunk may contain multiple tokens
                     // that's the case with vLLM chunked prefill or speculative decoding
                     let num_tokens =
-                        self.tokenizer.encode(content.clone(), false).unwrap().len() as u64;
+                        self.tokenizer.encode(content.clone(), true).unwrap().len() as u64;
                     if num_tokens > 1 {
                         warn!(
                             "Generated more than one token: {num_tokens}",
@@ -240,6 +240,11 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                         Error::StreamEnded => {
                             if aggregated_response.num_generated_tokens == 0 {
                                 // server sent no data
+                                aggregated_response.fail();
+                            }
+                            if aggregated_response.end_time.is_none() {
+                                // server closed the connection before we received the final response
+                                warn!("Connection closed before completion");
                                 aggregated_response.fail();
                             }
                         }

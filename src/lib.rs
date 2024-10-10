@@ -168,7 +168,6 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         report = benchmark.run() => {
             match report {
                 Ok(results) => {
-                    info!("Throughput is {requests_throughput} req/s",requests_throughput = results.get_results()[0].successful_request_rate().unwrap());
                     let report = benchmark.get_report();
                     let path = format!("results/{}_{}.json",run_config.tokenizer_name.replace("/","_").replace(".","_"), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"));
                     let path=Path::new(&path);
