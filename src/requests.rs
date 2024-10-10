@@ -186,7 +186,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                     // we need to count the number of tokens generated as each delta chunk may contain multiple tokens
                     // that's the case with vLLM chunked prefill or speculative decoding
                     let num_tokens =
-                        self.tokenizer.encode(content.clone(), true).unwrap().len() as u64;
+                        self.tokenizer.encode(content.clone(), false).unwrap().len() as u64;
                     if num_tokens > 1 {
                         warn!(
                             "Generated more than one token: {num_tokens}",
