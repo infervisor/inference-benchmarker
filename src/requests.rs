@@ -244,7 +244,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             }
                             if aggregated_response.end_time.is_none() {
                                 // server closed the connection before we received the final response
-                                warn!("Connection closed before completion");
+                                warn!("Connection closed before completion. Received :: {num_tokens}/{max_tokens} tokens. Response: {final_response}", num_tokens = aggregated_response.num_generated_tokens, max_tokens = request.num_decode_tokens.unwrap_or(0));
                                 aggregated_response.fail();
                             }
                         }
