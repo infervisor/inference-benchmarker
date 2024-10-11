@@ -53,7 +53,6 @@ struct Args {
     ///
     /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
     #[clap(
-        default_value = "num_tokens=200,max_tokens=210,min_tokens=190,variance=10",
         long,
         env,
         value_parser(parse_tokenizer_options)
@@ -69,7 +68,6 @@ struct Args {
     ///
     /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
     #[clap(
-        default_value = "num_tokens=200,max_tokens=210,min_tokens=190,variance=10",
         long,
         env,
         value_parser(parse_tokenizer_options)
