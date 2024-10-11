@@ -66,7 +66,7 @@ pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
         );
         let throughput = format!("{:.2} tokens/sec", result.token_throughput_secs().unwrap());
         let error_rate = result.failed_requests() as f64 / result.total_requests() as f64 * 100.0;
-        let error_rate = format!("{:.2}%", error_rate * 100.0);
+        let error_rate = format!("{:.2}%", error_rate);
         builder.push_record(vec![
             result.id.as_str(),
             qps.as_str(),
