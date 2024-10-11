@@ -24,8 +24,7 @@ def build_df(model: str, data_files: dict[str, str]) -> pd.DataFrame:
     return df
 
 
-def build_results_df() -> pd.DataFrame:
-    results_dir = 'results'
+def build_results_df(results_dir) -> pd.DataFrame:
     df = pd.DataFrame()
     # list directories
     directories = [f'{results_dir}/{d}' for d in os.listdir(results_dir) if os.path.isdir(f'{results_dir}/{d}')]
@@ -41,9 +40,13 @@ def build_results_df() -> pd.DataFrame:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--results-file', type=str, required=True, help='Path to the results file / S3 bucket')
+    parser.add_argument('--results-dir', default='results', type=str, required=True,
+                        help='Path to the source directory containing the results')
+    parser.add_argument('--results-file', type=str, required=True,
+                        help='Path to the results file to write to. Can be a S3 path')
+    parser.add_argument('--device', type=str, required=True, help='GPU name used for benchmarking')
     args = parser.parse_args()
-    df = build_results_df()
-    df['device'] = df['model'].apply(lambda x: 'H100')
+    df = build_results_df(args.results_dir)
+    df['device'] = df['model'].apply(lambda x: args.device)
     df['error_rate'] = df['failed_requests'] / (df['failed_requests'] + df['successful_requests']) * 100.0
     df.to_parquet(args.results_file)

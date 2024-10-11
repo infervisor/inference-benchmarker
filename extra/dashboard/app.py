@@ -1,9 +1,11 @@
 import os
 from contextlib import ExitStack
 from dataclasses import dataclass
+from typing import Tuple, List
 
 import gradio as gr
 import pandas as pd
+from github import Github, Auth
 
 
 @dataclass
@@ -165,12 +167,50 @@ def load_datasource(datasource, fn):
         raise ValueError(f"Unknown datasource: {datasource}")
 
 
+def add_github_info(df: pd.DataFrame, repo: str) -> pd.DataFrame:
+    versions = df['version'].unique()
+    auth = Auth.Token(os.environ.get('GITHUB_TOKEN'))
+    g = Github(auth=auth)
+    repo = g.get_repo(repo)
+    # retrieve all tags
+    tags = repo.get_tags()
+    for version in versions:
+        # retrieve commit from github
+        c = repo.get_commit(version)
+        df.loc[df['version'] == version, 'commit_message'] = c.commit.message
+        df.loc[df['version'] == version, 'commit_date'] = c.commit.author.date
+        df.loc[df['version'] == version, 'commit_tag'] = tags[version].name if version in tags else None
+    return df
+
+
+def build_commit_list(df: pd.DataFrame) -> List[Tuple[str, str]]:
+    commits = df['version'].unique()
+    l = []
+    if 'commit_date' in df.columns:
+        df = df.sort_values(by='commit_date', ascending=True, inplace=False)
+    for commit in commits:
+        short_commit = commit[:7]
+        commit_tag = df[df['version'] == commit].get('commit_tag')
+        tag = commit_tag.values[0] if commit_tag is not None else None
+        commit_message = df[df['version'] == commit].get('commit_message')
+        message = commit_message.values[0] if commit_message is not None else None
+        if 'commit_tag' in df.columns and tag is not None:
+            l.append((tag, commit))
+        elif 'commit_message' in df.columns and message is not None:
+            l.append((f'{short_commit} - {message}', commit))
+        else:
+            l.append((short_commit, commit))
+    return l
+
+
 if __name__ == '__main__':
     # Load data
     datasource_bench = os.environ.get('DATASOURCE_BENCH', 'file://benchmarks.parquet')
     datasource_ci = os.environ.get('DATASOURCE_CI', 'file://ci.parquet')
     df_bench = load_datasource(datasource_bench, load_bench_results)
     df_ci = load_datasource(datasource_ci, load_ci_results)
+    if os.environ.get('GITHUB_TOKEN') and os.environ.get('GITHUB_REPO'):
+        df_ci = add_github_info(df_ci, "huggingface/text-generation-inference")
 
     # Define metrics
     metrics = {
@@ -247,8 +287,10 @@ if __name__ == '__main__':
             with gr.Row():
                 device_ci = gr.Radio(list(devices_ci), label="Select device", value=devices_ci[0])
             with gr.Row():
-                commit_ref = gr.Dropdown(list(commits), label="Reference commit", value=commits[0])
-                commit_compare = gr.Dropdown(list(commits), label="Commit to compare", value=commits[0])
+                commit_list = build_commit_list(df_ci)
+                commit_ref = gr.Dropdown(commit_list, label="Reference commit", value=commit_list[0][1])
+                commit_compare = gr.Dropdown(commit_list, label="Commit to compare",
+                                             value=commit_list[1][1] if len(commit_list) > 1 else commit_list[0][1])
             with gr.Row():
                 comparison_table = gr.DataFrame(
                     pd.DataFrame(),
