@@ -38,6 +38,7 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
     * [Decode options](#decode-options)
   * [Deploy on Kubernetes](#deploy-on-kubernetes)
   * [Deploy on Slurm](#deploy-on-slurm)
+  * [Visualize the results](#visualize-the-results)
   * [Development](#development)
   * [Frequently Asked Questions](#frequently-asked-questions)
   * [TODO](#todo)
@@ -207,6 +208,20 @@ $ helm install tgi-benchmark ./extra/k8s/text-generation-inference-benchmark
 ## Deploy on Slurm
 
 Slurm example is provided in `extra/slurm`.
+
+## Visualize the results
+
+You can use the provided Gradio app to quickly visualize the results.
+Considering that JSON results are in `/path/to/results/dir`:
+```shell
+$ poetry install
+$ cd extra/dashboard
+$ poetry run python app.py --from-results-dir /path/to/results/dir
+
+
+
+
+```
 
 ## Development
 

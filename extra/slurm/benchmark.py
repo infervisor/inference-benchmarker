@@ -8,10 +8,10 @@ MEM_PER_CPU_GB = 11
 def main():
     models = [
         ('meta-llama/Llama-3.1-8B-Instruct', 1),
-        ('meta-llama/Llama-3.1-70B-Instruct', 4),
-        ('mistralai/Mixtral-8x7B-Instruct-v0.1', 2),
-        ('neuralmagic/Meta-Llama-3-70B-Instruct-FP8', 2),
-        ('CohereForAI/c4ai-command-r-plus-08-2024', 4),
+        # ('meta-llama/Llama-3.1-70B-Instruct', 4),
+        # ('mistralai/Mixtral-8x7B-Instruct-v0.1', 2),
+        # ('neuralmagic/Meta-Llama-3-70B-Instruct-FP8', 2),
+        # ('CohereForAI/c4ai-command-r-plus-08-2024', 4),
     ]
     num_passes = 2
     engines = ['tgi', 'vllm']
