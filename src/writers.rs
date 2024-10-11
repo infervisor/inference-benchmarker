@@ -6,6 +6,18 @@ use sysinfo::{CpuRefreshKind, MemoryRefreshKind, System};
 use tokio::fs;
 
 #[derive(Serialize)]
+pub struct PercentilesWriter {
+    pub p50: f64,
+    pub p60: f64,
+    pub p70: f64,
+    pub p80: f64,
+    pub p90: f64,
+    pub p95: f64,
+    pub p99: f64,
+    pub avg: f64,
+}
+
+#[derive(Serialize)]
 pub struct BenchmarkResultsWriter {
     id: String,
     executor_type: String,
@@ -14,19 +26,13 @@ pub struct BenchmarkResultsWriter {
     total_tokens: u64,
     token_throughput_secs: f64,
     duration_ms: u128,
-    time_to_first_token_ms_avg: f64,
-    time_to_first_token_ms_p90: f64,
-    time_to_first_token_ms_p95: f64,
-    inter_token_latency_ms_avg: f64,
-    inter_token_latency_ms_p90: f64,
-    inter_token_latency_ms_p95: f64,
+    time_to_first_token_ms: PercentilesWriter,
+    inter_token_latency_ms: PercentilesWriter,
     failed_requests: u64,
     successful_requests: u64,
     request_rate: f64,
     total_tokens_sent: u64,
-    e2e_latency_ms_avg: u128,
-    e2e_latency_ms_p90: u128,
-    e2e_latency_ms_p95: u128,
+    e2e_latency_ms: PercentilesWriter,
 }
 
 impl BenchmarkResultsWriter {
@@ -39,31 +45,40 @@ impl BenchmarkResultsWriter {
             total_tokens: results.total_tokens(),
             token_throughput_secs: results.token_throughput_secs()?,
             duration_ms: results.duration().ok().unwrap().as_micros() / 1000,
-            time_to_first_token_ms_avg: results.time_to_first_token_avg().ok().unwrap().as_micros()
-                as f64
-                / 1000.,
-            time_to_first_token_ms_p90: results.time_to_first_token_percentile(0.9)?.as_micros()
-                as f64
-                / 1000.,
-            time_to_first_token_ms_p95: results.time_to_first_token_percentile(0.95)?.as_micros()
-                as f64
-                / 1000.,
-            inter_token_latency_ms_avg: results.inter_token_latency_avg().ok().unwrap().as_micros()
-                as f64
-                / 1000.,
-            inter_token_latency_ms_p90: results.inter_token_latency_percentile(0.9)?.as_micros()
-                as f64
-                / 1000.,
-            inter_token_latency_ms_p95: results.inter_token_latency_percentile(0.95)?.as_micros()
-                as f64
-                / 1000.,
+            time_to_first_token_ms: PercentilesWriter {
+                p50: results.time_to_first_token_percentile(0.5)?.as_micros() as f64 / 1000.,
+                p60: results.time_to_first_token_percentile(0.6)?.as_micros() as f64 / 1000.,
+                p70: results.time_to_first_token_percentile(0.7)?.as_micros() as f64 / 1000.,
+                p80: results.time_to_first_token_percentile(0.8)?.as_micros() as f64 / 1000.,
+                p90: results.time_to_first_token_percentile(0.9)?.as_micros() as f64 / 1000.,
+                p95: results.time_to_first_token_percentile(0.95)?.as_micros() as f64 / 1000.,
+                p99: results.time_to_first_token_percentile(0.99)?.as_micros() as f64 / 1000.,
+                avg: results.time_to_first_token_avg().ok().unwrap().as_micros() as f64 / 1000.,
+            },
+            inter_token_latency_ms: PercentilesWriter {
+                p50: results.inter_token_latency_percentile(0.5)?.as_micros() as f64 / 1000.,
+                p60: results.inter_token_latency_percentile(0.6)?.as_micros() as f64 / 1000.,
+                p70: results.inter_token_latency_percentile(0.7)?.as_micros() as f64 / 1000.,
+                p80: results.inter_token_latency_percentile(0.8)?.as_micros() as f64 / 1000.,
+                p90: results.inter_token_latency_percentile(0.9)?.as_micros() as f64 / 1000.,
+                p95: results.inter_token_latency_percentile(0.95)?.as_micros() as f64 / 1000.,
+                p99: results.inter_token_latency_percentile(0.99)?.as_micros() as f64 / 1000.,
+                avg: results.inter_token_latency_avg().ok().unwrap().as_micros() as f64 / 1000.,
+            },
             failed_requests: results.failed_requests() as u64,
             successful_requests: results.successful_requests() as u64,
             request_rate: results.successful_request_rate()?,
             total_tokens_sent: results.total_tokens_sent(),
-            e2e_latency_ms_avg: results.e2e_latency_avg().ok().unwrap().as_micros() / 1000,
-            e2e_latency_ms_p90: results.e2e_latency_percentile(0.9)?.as_micros() / 1000,
-            e2e_latency_ms_p95: results.e2e_latency_percentile(0.95)?.as_micros() / 1000,
+            e2e_latency_ms: PercentilesWriter {
+                p50: results.e2e_latency_percentile(0.5)?.as_micros() as f64 / 1000.,
+                p60: results.e2e_latency_percentile(0.6)?.as_micros() as f64 / 1000.,
+                p70: results.e2e_latency_percentile(0.7)?.as_micros() as f64 / 1000.,
+                p80: results.e2e_latency_percentile(0.8)?.as_micros() as f64 / 1000.,
+                p90: results.e2e_latency_percentile(0.9)?.as_micros() as f64 / 1000.,
+                p95: results.e2e_latency_percentile(0.95)?.as_micros() as f64 / 1000.,
+                p99: results.e2e_latency_percentile(0.99)?.as_micros() as f64 / 1000.,
+                avg: results.e2e_latency_avg().ok().unwrap().as_micros() as f64 / 1000.,
+            },
         })
     }
 }

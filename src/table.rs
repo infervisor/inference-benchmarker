@@ -46,9 +46,9 @@ pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
     builder.set_header(vec![
         "Benchmark",
         "QPS",
-        "E2E Latency",
-        "TTFT",
-        "ITL",
+        "E2E Latency (avg)",
+        "TTFT (avg)",
+        "ITL (avg)",
         "Throughput",
         "Error Rate",
     ]);
