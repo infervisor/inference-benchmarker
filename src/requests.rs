@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, Mutex};
+use std::time;
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::mpsc::Sender;
 
@@ -58,6 +59,7 @@ pub struct OpenAITextGenerationBackend {
     pub model_name: String,
     pub client: reqwest::Client,
     pub tokenizer: Arc<Tokenizer>,
+    pub timeout: time::Duration,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -90,6 +92,7 @@ pub struct OpenAITextGenerationRequest {
     pub max_tokens: Option<u64>,
     pub stream: bool,
     pub stop: Option<String>,
+    pub temperature: f64,
 }
 
 impl OpenAITextGenerationBackend {
@@ -98,6 +101,7 @@ impl OpenAITextGenerationBackend {
         base_url: String,
         model_name: String,
         tokenizer: Arc<Tokenizer>,
+        timeout: time::Duration,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             client: reqwest::Client::new(),
@@ -105,6 +109,7 @@ impl OpenAITextGenerationBackend {
             base_url,
             model_name,
             tokenizer,
+            timeout,
         })
     }
 }
@@ -140,6 +145,7 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
             max_tokens: request.num_decode_tokens,
             stream: true,
             stop: None,
+            temperature: 0.0
         };
         let req = self
             .client
@@ -148,7 +154,8 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                 "Authorization",
                 format!("Bearer {token}", token = self.api_key),
             )
-            .json(&serde_json::json!(body));
+            .json(&serde_json::json!(body))
+            .timeout(self.timeout);
         // start timer
         aggregated_response.start(request.num_prompt_tokens);
         let mut es = EventSource::new(req).unwrap();
@@ -354,8 +361,7 @@ impl ConversationTextRequestGenerator {
         bar.set_style(
             ProgressStyle::with_template(
                 "Tokenizing prompts [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-            )
-            .unwrap(),
+            )?,
         );
         split(data, entry_splitter).for_each(|subrange| {
             for entry in subrange {
@@ -687,6 +693,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -745,6 +752,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -829,6 +837,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -874,6 +883,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -919,6 +929,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -967,6 +978,7 @@ mod tests {
             url,
             "gpt2".to_string(),
             tokenizer,
+            time::Duration::from_secs(10),
         )
         .unwrap();
         let request = TextGenerationRequest {
@@ -992,5 +1004,53 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].failed, true);
         assert_eq!(responses[0].num_generated_tokens, 8);
+    }
+
+    /// Test that request timeout is handled correctly
+    #[tokio::test]
+    async fn test_timeout_should_fail_request() {
+        let mut s = mockito::Server::new_async().await;
+        s.mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "text/event-stream")
+            .with_chunked_body(|w| {
+                w.write_all(b"data: {\"choices\": [{\"message\": null, \"finish_reason\": null, \"delta\": {\"content\": \"Hello, world!\"}}]}\n\n").unwrap();
+                // sleep for 5s
+                sleep(std::time::Duration::from_secs(5));
+                w.write_all(b"data: [DONE]\n\n")
+            })
+            .create_async().await;
+        let url = s.url();
+        let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+            time::Duration::from_secs(1),
+        )
+            .unwrap();
+        let request = TextGenerationRequest {
+            prompt: "Hello, world!".to_string(),
+            num_prompt_tokens: 2,
+            num_decode_tokens: Some(16),
+            system_prompt: None,
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let request = Arc::new(request);
+        tokio::spawn(async move {
+            backend.generate(request.clone(), tx.clone()).await;
+        });
+        let reponses = Arc::new(RwLock::new(Vec::new()));
+        let responses_clone = reponses.clone();
+        let t = tokio::spawn(async move {
+            while let Some(item) = rx.recv().await {
+                responses_clone.write().await.push(item);
+            }
+        });
+        t.await.unwrap();
+        let responses = reponses.read().await;
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].failed, true);
     }
 }

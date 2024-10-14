@@ -65,12 +65,12 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
             }
         };
     let tokenizer = Arc::new(tokenizer);
-    // let backend = OpenAITextGenerationBackend::new("".to_string(), "http://10.90.11.68:8000".to_string());
     let backend = OpenAITextGenerationBackend::try_new(
         "".to_string(),
         run_config.url.clone(),
         run_config.tokenizer_name.clone(),
         tokenizer,
+        run_config.duration,
     )?;
 
     let config = BenchmarkConfig {
