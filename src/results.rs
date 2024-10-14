@@ -124,11 +124,10 @@ impl BenchmarkResults {
 
     pub fn e2e_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
-            let mut total_time = std::time::Duration::new(0, 0);
-            for response in self.get_successful_responses() {
-                total_time += response.e2e_latency().unwrap_or_default();
+            if self.successful_requests() == 0 {
+                return Ok(Duration::from_secs(0));
             }
-            Ok(total_time / self.total_requests() as u32)
+            Ok(self.get_successful_responses().iter().map(|response| response.e2e_latency().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
@@ -147,11 +146,10 @@ impl BenchmarkResults {
 
     pub fn time_to_first_token_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
-            let mut total_time = std::time::Duration::new(0, 0);
-            for response in self.get_successful_responses() {
-                total_time += response.time_to_first_token().unwrap_or_default();
+            if self.successful_requests() == 0 {
+                return Ok(Duration::from_secs(0));
             }
-            Ok(total_time / self.total_requests() as u32)
+            Ok(self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
@@ -170,11 +168,10 @@ impl BenchmarkResults {
 
     pub fn inter_token_latency_avg(&self) -> anyhow::Result<std::time::Duration> {
         if self.is_ready() {
-            let mut total_time = std::time::Duration::new(0, 0);
-            for response in self.get_successful_responses() {
-                total_time += response.inter_token_latency().unwrap_or_default();
+            if self.successful_requests() == 0 {
+                return Ok(Duration::from_secs(0));
             }
-            Ok(total_time / self.total_requests() as u32)
+            Ok(self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
