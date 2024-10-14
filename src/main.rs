@@ -52,11 +52,7 @@ struct Args {
     /// * variance: variance in the number of prompt tokens
     ///
     /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
-    #[clap(
-        long,
-        env,
-        value_parser(parse_tokenizer_options)
-    )]
+    #[clap(long, env, value_parser(parse_tokenizer_options))]
     prompt_options: Option<TokenizeOptions>,
     /// Constraints for the generated text.
     /// We sample the number of tokens to generate from a normal distribution.
@@ -67,11 +63,7 @@ struct Args {
     /// * variance: variance in the number of generated tokens
     ///
     /// Example: num_tokens=200,max_tokens=210,min_tokens=190,variance=10
-    #[clap(
-        long,
-        env,
-        value_parser(parse_tokenizer_options)
-    )]
+    #[clap(long, env, value_parser(parse_tokenizer_options))]
     decode_options: Option<TokenizeOptions>,
     /// Hugging Face dataset to use for prompt generation
     #[clap(default_value = "hlarcher/share_gpt_small", long, env)]

@@ -127,7 +127,12 @@ impl BenchmarkResults {
             if self.successful_requests() == 0 {
                 return Ok(Duration::from_secs(0));
             }
-            Ok(self.get_successful_responses().iter().map(|response| response.e2e_latency().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
+            Ok(self
+                .get_successful_responses()
+                .iter()
+                .map(|response| response.e2e_latency().unwrap_or_default())
+                .sum::<Duration>()
+                / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
@@ -149,7 +154,12 @@ impl BenchmarkResults {
             if self.successful_requests() == 0 {
                 return Ok(Duration::from_secs(0));
             }
-            Ok(self.get_successful_responses().iter().map(|response| response.time_to_first_token().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
+            Ok(self
+                .get_successful_responses()
+                .iter()
+                .map(|response| response.time_to_first_token().unwrap_or_default())
+                .sum::<Duration>()
+                / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }
@@ -171,7 +181,12 @@ impl BenchmarkResults {
             if self.successful_requests() == 0 {
                 return Ok(Duration::from_secs(0));
             }
-            Ok(self.get_successful_responses().iter().map(|response| response.inter_token_latency().unwrap_or_default()).sum::<Duration>() / self.successful_requests() as u32)
+            Ok(self
+                .get_successful_responses()
+                .iter()
+                .map(|response| response.inter_token_latency().unwrap_or_default())
+                .sum::<Duration>()
+                / self.successful_requests() as u32)
         } else {
             Err(anyhow::anyhow!(NoResponses))
         }

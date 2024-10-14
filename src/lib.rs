@@ -147,7 +147,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         run_config.dataset_file,
         run_config.hf_token.clone(),
     )
-        .expect("Can't download dataset");
+    .expect("Can't download dataset");
     let requests = requests::ConversationTextRequestGenerator::load(
         filepath,
         run_config.tokenizer_name.clone(),
