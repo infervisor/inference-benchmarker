@@ -51,6 +51,7 @@ pub fn results_table(benchmark: BenchmarkReport) -> anyhow::Result<tabled::Table
         "ITL (avg)",
         "Throughput",
         "Error Rate",
+        "Sucessful Requests",
     ]);
     let results = benchmark.get_results();
     for result in results {
@@ -75,6 +76,12 @@ pub fn results_table(benchmark: BenchmarkReport) -> anyhow::Result<tabled::Table
             itl.as_str(),
             throughput.as_str(),
             error_rate.as_str(),
+            format!(
+                "{}/{}",
+                result.successful_requests(),
+                result.total_requests()
+            )
+            .as_str(),
         ]);
     }
     let mut table = builder.build();

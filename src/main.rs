@@ -117,18 +117,23 @@ fn parse_tokenizer_options(s: &str) -> Result<TokenizeOptions, Error> {
             return Err(Error::new(InvalidValue));
         }
         match key_value[0] {
-            "num_tokens" => tokenizer_options.num_tokens = key_value[1].parse::<u64>().unwrap(),
+            "num_tokens" => {
+                tokenizer_options.num_tokens = Some(key_value[1].parse::<u64>().unwrap())
+            }
             "min_tokens" => tokenizer_options.min_tokens = key_value[1].parse::<u64>().unwrap(),
             "max_tokens" => tokenizer_options.max_tokens = key_value[1].parse::<u64>().unwrap(),
             "variance" => tokenizer_options.variance = key_value[1].parse::<u64>().unwrap(),
             _ => return Err(Error::new(InvalidValue)),
         }
     }
-    if tokenizer_options.num_tokens == 0
-        || tokenizer_options.min_tokens == 0
-        || tokenizer_options.max_tokens == 0
-        || tokenizer_options.min_tokens > tokenizer_options.max_tokens
+    if tokenizer_options.num_tokens.is_some()
+        && (tokenizer_options.num_tokens.unwrap() == 0
+            || tokenizer_options.min_tokens == 0
+            || tokenizer_options.max_tokens == 0)
     {
+        return Err(Error::new(InvalidValue));
+    }
+    if tokenizer_options.min_tokens > tokenizer_options.max_tokens {
         return Err(Error::new(InvalidValue));
     }
     Ok(tokenizer_options)
