@@ -131,7 +131,7 @@ pub struct BenchmarkReportWriter {
 }
 
 impl BenchmarkReportWriter {
-    pub fn new(
+    pub fn try_new(
         config: BenchmarkConfig,
         report: BenchmarkReport,
     ) -> anyhow::Result<BenchmarkReportWriter> {
@@ -169,10 +169,11 @@ impl BenchmarkReportWriter {
         Ok(())
     }
 
-    pub async fn stdout(&self) {
-        let param_table = table::parameters_table(self.config.clone());
+    pub async fn stdout(&self)-> anyhow::Result<()> {
+        let param_table = table::parameters_table(self.config.clone())?;
         println!("\n{param_table}\n");
-        let results_table = table::results_table(self.report.clone());
+        let results_table = table::results_table(self.report.clone())?;
         println!("\n{results_table}\n");
+        Ok(())
     }
 }

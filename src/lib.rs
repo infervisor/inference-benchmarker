@@ -12,7 +12,7 @@ use crate::requests::OpenAITextGenerationBackend;
 pub use crate::requests::TokenizeOptions;
 use chrono::Local;
 use crossterm::ExecutableCommand;
-use log::{debug, error, info, Level, LevelFilter};
+use log::{debug, error, info, warn, Level, LevelFilter};
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
@@ -147,7 +147,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         run_config.dataset_file,
         run_config.hf_token.clone(),
     )
-    .expect("Can't download dataset");
+        .expect("Can't download dataset");
     let requests = requests::ConversationTextRequestGenerator::load(
         filepath,
         run_config.tokenizer_name.clone(),
@@ -171,7 +171,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
                     let report = benchmark.get_report();
                     let path = format!("results/{}_{}.json",run_config.tokenizer_name.replace("/","_").replace(".","_"), chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"));
                     let path=Path::new(&path);
-                    let writer=BenchmarkReportWriter::new(config.clone(), report)?;
+                    let writer=BenchmarkReportWriter::try_new(config.clone(), report)?;
                     writer.json(path).await?;
                     info!("Report saved to {:?}",path);
                 },
@@ -199,8 +199,14 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
     io::stdout().execute(ratatui::crossterm::cursor::Show)?;
 
     let report = benchmark.get_report();
-    let writer = BenchmarkReportWriter::new(config.clone(), report)?;
-    writer.stdout().await;
+    match BenchmarkReportWriter::try_new(config.clone(), report) {
+        Ok(writer) => {
+            writer.stdout().await?;
+        }
+        Err(_) => {
+            warn!("No results to report.");
+        }
+    };
 
     Ok(())
 }

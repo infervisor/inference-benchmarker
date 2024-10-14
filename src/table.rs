@@ -2,7 +2,7 @@ use crate::results::BenchmarkReport;
 use crate::BenchmarkConfig;
 use tabled::builder::Builder;
 
-pub fn parameters_table(benchmark: BenchmarkConfig) -> tabled::Table {
+pub fn parameters_table(benchmark: BenchmarkConfig) -> anyhow::Result<tabled::Table> {
     let mut builder = Builder::default();
     let rates = benchmark
         .rates
@@ -38,10 +38,10 @@ pub fn parameters_table(benchmark: BenchmarkConfig) -> tabled::Table {
     builder.push_record(vec!["Extra Metadata", extra_metadata.as_str()]);
     let mut table = builder.build();
     table.with(tabled::settings::Style::sharp());
-    table
+    Ok(table)
 }
 
-pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
+pub fn results_table(benchmark: BenchmarkReport) -> anyhow::Result<tabled::Table> {
     let mut builder = Builder::default();
     builder.set_header(vec![
         "Benchmark",
@@ -54,17 +54,17 @@ pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
     ]);
     let results = benchmark.get_results();
     for result in results {
-        let qps = format!("{:.2} req/s", result.successful_request_rate().unwrap());
-        let e2e = format!("{:.2} sec", result.e2e_latency_avg().unwrap().as_secs_f64());
+        let qps = format!("{:.2} req/s", result.successful_request_rate()?);
+        let e2e = format!("{:.2} sec", result.e2e_latency_avg()?.as_secs_f64());
         let ttft = format!(
             "{:.2} ms",
-            result.time_to_first_token_avg().unwrap().as_micros() as f64 / 1000.0
+            result.time_to_first_token_avg()?.as_micros() as f64 / 1000.0
         );
         let itl = format!(
             "{:.2} ms",
-            result.inter_token_latency_avg().unwrap().as_micros() as f64 / 1000.0
+            result.inter_token_latency_avg()?.as_micros() as f64 / 1000.0
         );
-        let throughput = format!("{:.2} tokens/sec", result.token_throughput_secs().unwrap());
+        let throughput = format!("{:.2} tokens/sec", result.token_throughput_secs()?);
         let error_rate = result.failed_requests() as f64 / result.total_requests() as f64 * 100.0;
         let error_rate = format!("{:.2}%", error_rate);
         builder.push_record(vec![
@@ -79,5 +79,5 @@ pub fn results_table(benchmark: BenchmarkReport) -> tabled::Table {
     }
     let mut table = builder.build();
     table.with(tabled::settings::Style::sharp());
-    table
+    Ok(table)
 }
