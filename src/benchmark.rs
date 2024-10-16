@@ -411,3 +411,70 @@ impl Benchmark {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::requests::DummyTextGenerationBackend;
+    use crate::requests::DummyTextRequestGenerator;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_sweep_benchmark_timings() {
+        let generation_time = Duration::from_secs(2);
+        let (event_tx, mut _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (stop_sender, _) = tokio::sync::broadcast::channel(1);
+        let backend = Box::new(DummyTextGenerationBackend::new(Duration::from_secs(
+            generation_time.as_secs(),
+        )));
+        let requests_generator = Arc::from(Mutex::from(DummyTextRequestGenerator::new()));
+        let mut benchmark = Benchmark::new(
+            BenchmarkConfig {
+                max_vus: 100,
+                duration: Duration::from_secs(10),
+                benchmark_kind: BenchmarkKind::Sweep,
+                warmup_duration: Duration::from_secs(1),
+                rates: None,
+                num_rates: 2,
+                prompt_options: None,
+                decode_options: None,
+                tokenizer: "gpt2".to_string(),
+                extra_metadata: None,
+            },
+            backend,
+            requests_generator,
+            event_tx,
+            stop_sender,
+        );
+        let report = benchmark.run().await.unwrap();
+        assert_eq!(report.get_results().len(), 4);
+        let generation_time_per_token_milli = generation_time.as_millis() as i128 / 10;
+        for result in report.get_results() {
+            let delta_ttft = result.time_to_first_token_avg().unwrap().as_millis() as i128
+                - generation_time_per_token_milli; // Dummy backends generates 10 tokens
+            let delta_itl = result.inter_token_latency_avg().unwrap().as_millis() as i128
+                - generation_time_per_token_milli;
+            let delta_e2e = result.e2e_latency_avg().unwrap().as_millis() as i128
+                - generation_time.as_millis() as i128;
+            let allowed_error_ms = 3; // allow error margin for timing tests
+            assert!(
+                delta_ttft.abs() <= allowed_error_ms,
+                "time_to_first_token_delta: {:?}, expected {:?}",
+                delta_ttft.abs(),
+                allowed_error_ms
+            );
+            assert!(
+                delta_itl.abs() <= allowed_error_ms,
+                "inter_token_latency_delta: {:?}, expected {:?}",
+                delta_itl.abs(),
+                allowed_error_ms
+            );
+            assert!(
+                delta_e2e.abs() <= allowed_error_ms * 10, // Cumulative error for 10 tokens
+                "e2e_latency_delta: {:?}, expected {:?}",
+                delta_e2e.abs(),
+                allowed_error_ms * 10
+            );
+        }
+    }
+}

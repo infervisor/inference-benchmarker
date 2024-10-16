@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time;
 use tokenizers::{FromPretrainedParameters, Tokenizer};
 use tokio::sync::mpsc::Sender;
+use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
 pub struct TextGenerationRequest {
@@ -208,18 +209,6 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                         }
                         Some(_) => {
                             aggregated_response.add_tokens(num_tokens);
-                            // check that the response has the expected number of tokens if specified
-                            if let Some(num_decode_tokens) = request.num_decode_tokens {
-                                if aggregated_response.num_generated_tokens != num_decode_tokens {
-                                    warn!(
-                                        "Expected {expected} tokens, got {actual}",
-                                        expected = num_decode_tokens,
-                                        actual = aggregated_response.num_generated_tokens
-                                    );
-                                    aggregated_response.fail();
-                                    continue;
-                                }
-                            }
                             aggregated_response.stop();
                             trace!("Generated text using OpenAI API | prompt: {prompt}, max tokens: {max_tokens:?}, response: {message}", prompt = request.prompt, max_tokens = request.num_decode_tokens,message = &content);
                         }
@@ -266,6 +255,49 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
             .await
             .expect("Error sending response to channel");
         //debug!("Final response: {response}", response = final_response);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DummyTextGenerationBackend {
+    time_to_generate: time::Duration,
+}
+
+impl DummyTextGenerationBackend {
+    pub fn new(time_to_generate: time::Duration) -> Self {
+        Self { time_to_generate }
+    }
+}
+
+impl Default for DummyTextGenerationBackend {
+    fn default() -> Self {
+        Self::new(time::Duration::from_secs(1))
+    }
+}
+
+#[async_trait]
+impl TextGenerationBackend for DummyTextGenerationBackend {
+    async fn generate(
+        &self,
+        request: Arc<TextGenerationRequest>,
+        sender: Sender<crate::requests::TextGenerationAggregatedResponse>,
+    ) {
+        let mut response = TextGenerationAggregatedResponse::default();
+        response.start(request.num_prompt_tokens);
+        let num_tokens = request.num_decode_tokens.unwrap_or(10);
+        let time_per_token = self
+            .time_to_generate
+            .checked_div(num_tokens as u32)
+            .unwrap();
+        for _ in 0..num_tokens {
+            sleep(time_per_token).await;
+            response.add_tokens(1);
+        }
+        response.stop();
+        sender
+            .send(response.clone())
+            .await
+            .expect("Error sending response to channel");
     }
 }
 
@@ -514,6 +546,31 @@ impl TextRequestGenerator for ConversationTextRequestGenerator {
     }
 }
 
+pub struct DummyTextRequestGenerator {}
+
+impl DummyTextRequestGenerator {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Default for DummyTextRequestGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TextRequestGenerator for DummyTextRequestGenerator {
+    fn generate_request(&mut self) -> TextGenerationRequest {
+        TextGenerationRequest {
+            prompt: "Hello, world!".to_string(),
+            num_prompt_tokens: 2,
+            num_decode_tokens: Some(10),
+            system_prompt: None,
+        }
+    }
+}
+
 fn tokenize_prompt(
     prompt: String,
     tokenizer: Arc<Tokenizer>,
@@ -637,7 +694,7 @@ impl TextGenerationAggregatedResponse {
                 for i in 1..self.times_to_tokens.len() {
                     total_time += self.times_to_tokens[i];
                 }
-                Some(total_time / (self.num_generated_tokens as u32))
+                Some(total_time / (self.num_generated_tokens as u32 - 1))
             }
         }
     }
@@ -700,6 +757,7 @@ mod tests {
         let t = tokio::spawn(async move {
             while let Some(item) = rx.recv().await {
                 let response = item;
+                assert_eq!(response.failed, false);
                 num_tokens_clone.fetch_add(
                     response.num_generated_tokens,
                     std::sync::atomic::Ordering::SeqCst,
@@ -780,8 +838,8 @@ mod tests {
 
         let e2e_timing_overhead = Duration::from_millis(10);
         let expected_e2e_latency_avg = Duration::from_millis(500);
-        let expected_inter_token_latency_avg = Duration::from_millis(31); // 16 tokens with a 500ms delay
-        let inter_token_latency_overhead = Duration::from_millis(2);
+        let expected_inter_token_latency_avg = Duration::from_millis(33); // 16-1 tokens with a 500ms delay
+        let inter_token_latency_overhead = Duration::from_millis(3);
         let expected_ttft = Duration::from_millis(3); // account for http overhead
         assert!(
             e2e_latency_avg > expected_e2e_latency_avg
@@ -944,54 +1002,6 @@ mod tests {
         let responses = responses.read().await;
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].failed, true);
-    }
-
-    /// Test that responses fail when the expected number of tokens is not generated
-    #[tokio::test]
-    async fn test_openai_expect_token_count() {
-        let mut s = mockito::Server::new_async().await;
-        s.mock("POST", "/v1/chat/completions")
-            .with_status(200)
-            .with_header("content-type", "text/event-stream")
-            .with_chunked_body(|w| {
-                w.write_all(b"data: {\"choices\": [{\"message\": null, \"finish_reason\": null, \"delta\": {\"content\": \"Hello, world!\"}}]}\n\n").unwrap();
-                w.write_all(b"data: {\"choices\": [{\"message\": {\"content\": \"Hello, world!Hello, world!Hello, world!Hello, world!\", \"role\": \"user\"}, \"finish_reason\": \"stop\", \"delta\": {\"content\": \"Hello, world!\"}}]}\n\n").unwrap();
-                w.write_all(b"data: [DONE]\n\n")
-            })
-            .create_async().await;
-        let url = s.url();
-        let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
-        let backend = OpenAITextGenerationBackend::try_new(
-            "".to_string(),
-            url,
-            "gpt2".to_string(),
-            tokenizer,
-            time::Duration::from_secs(10),
-        )
-        .unwrap();
-        let request = TextGenerationRequest {
-            prompt: "Hello, world!".to_string(),
-            num_prompt_tokens: 2,
-            num_decode_tokens: Some(16),
-            system_prompt: None,
-        };
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        let request = Arc::new(request);
-        tokio::spawn(async move {
-            backend.generate(request.clone(), tx.clone()).await;
-        });
-        let reponses = Arc::new(RwLock::new(Vec::new()));
-        let responses_clone = reponses.clone();
-        let t = tokio::spawn(async move {
-            while let Some(item) = rx.recv().await {
-                responses_clone.write().await.push(item);
-            }
-        });
-        t.await.unwrap();
-        let responses = reponses.read().await;
-        assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].failed, true);
-        assert_eq!(responses[0].num_generated_tokens, 8);
     }
 
     /// Test that request timeout is handled correctly

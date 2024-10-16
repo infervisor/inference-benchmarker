@@ -144,3 +144,115 @@ impl Scheduler {
         self.results.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::requests::OpenAITextGenerationBackend;
+    use std::time::Duration;
+    use tokenizers::Tokenizer;
+    use tokio::time;
+
+    #[tokio::test]
+    async fn test_constant_arrival_rate_scheduler() {
+        let (progress_tx, _) = tokio::sync::mpsc::channel(10000);
+        let (stop_sender, _) = tokio::sync::broadcast::channel(1);
+        let backend = Box::new(crate::requests::DummyTextGenerationBackend::new(
+            Duration::from_secs(1),
+        ));
+        let requests_generator = Arc::from(Mutex::from(
+            crate::requests::DummyTextRequestGenerator::new(),
+        ));
+        let mut scheduler = Scheduler::new(
+            "test".to_string(),
+            backend,
+            ExecutorType::ConstantArrivalRate,
+            ExecutorConfig {
+                max_vus: 800,
+                duration: std::time::Duration::from_secs(10),
+                rate: Some(20.0),
+            },
+            requests_generator,
+            progress_tx,
+            stop_sender,
+        );
+        let results = scheduler.run().await.unwrap();
+        assert_eq!(results.successful_requests(), 180); // 20 requests per second for 10 seconds - 20 requests for last second as the backend has a 1 second delay
+    }
+
+    #[tokio::test]
+    async fn test_constant_vus_scheduler() {
+        let (progress_tx, _) = tokio::sync::mpsc::channel(10000);
+        let (stop_sender, _) = tokio::sync::broadcast::channel(1);
+        let backend = Box::new(crate::requests::DummyTextGenerationBackend::new(
+            Duration::from_secs(1),
+        ));
+        let requests_generator = Arc::from(Mutex::from(
+            crate::requests::DummyTextRequestGenerator::new(),
+        ));
+        let mut scheduler = Scheduler::new(
+            "test".to_string(),
+            backend,
+            ExecutorType::ConstantVUs,
+            ExecutorConfig {
+                max_vus: 800,
+                duration: std::time::Duration::from_secs(10),
+                rate: None,
+            },
+            requests_generator,
+            progress_tx,
+            stop_sender,
+        );
+        let results = scheduler.run().await.unwrap();
+        assert!(
+            results.successful_requests() > 7200,
+            "Expected at least 7200 requests, got {}",
+            results.successful_requests()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_constant_arrival_rate_openai_backend() {
+        let (progress_tx, _) = tokio::sync::mpsc::channel(10000);
+        let (stop_sender, _) = tokio::sync::broadcast::channel(1);
+        let mut s = mockito::Server::new_async().await;
+        s.mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "text/event-stream")
+            .with_chunked_body(|w| {
+                w.write_all(b"data: {\"choices\": [{\"message\": null, \"finish_reason\": null, \"delta\": {\"content\": \"Hello, world!\"}}]}\n\n").unwrap();
+                std::thread::sleep(Duration::from_millis(500));
+                w.write_all(b"data: {\"choices\": [{\"message\": {\"content\": \"Hello, world!Hello, world!Hello, world!Hello, world!\", \"role\": \"user\"}, \"finish_reason\": \"stop\", \"delta\": {\"content\": \"Hello, world!\"}}]}\n\n").unwrap();
+                w.write_all(b"data: [DONE]\n\n")
+            })
+            .create_async().await;
+        let url = s.url();
+        let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
+        let backend = OpenAITextGenerationBackend::try_new(
+            "".to_string(),
+            url,
+            "gpt2".to_string(),
+            tokenizer,
+            time::Duration::from_secs(10),
+        )
+        .unwrap();
+        let requests_generator = Arc::from(Mutex::from(
+            crate::requests::DummyTextRequestGenerator::new(),
+        ));
+        let mut scheduler = Scheduler::new(
+            "test".to_string(),
+            Box::new(backend),
+            ExecutorType::ConstantArrivalRate,
+            ExecutorConfig {
+                max_vus: 800,
+                duration: std::time::Duration::from_secs(10),
+                rate: Some(50.0),
+            },
+            requests_generator,
+            progress_tx,
+            stop_sender,
+        );
+        let results = scheduler.run().await.unwrap();
+        assert_eq!(results.successful_requests(), 475); // 25 expected missing requests due to the 500ms delay in the backend
+    }
+}

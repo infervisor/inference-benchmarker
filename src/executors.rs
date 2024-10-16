@@ -73,6 +73,7 @@ impl Executor for ConstantVUsExecutor {
         for _ in 0..self.config.max_vus {
             let mut requests_guard = requests.lock().await;
             let request = Arc::from(requests_guard.generate_request());
+            drop(requests_guard);
             start_vu(
                 self.backend.clone(),
                 request,
@@ -102,6 +103,7 @@ impl Executor for ConstantVUsExecutor {
                     } else {
                         let mut requests_guard = requests.lock().await;
                         let request = Arc::from(requests_guard.generate_request());
+                        drop(requests_guard);
                         active_vus.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         start_vu(self.backend.clone(), request, responses_tx.clone(), end_tx.clone(), stop_sender.clone()).await;
                     }
@@ -196,11 +198,11 @@ impl Executor for ConstantArrivalRateExecutor {
             tokio::select! {
                 _ = stop_receiver_signal.recv() => {},
                 _= async {
-                    let mut spawn_queue = rate.max(1.0); // start with at least one VU
+                    let mut spawn_queue = 0.; // start with at least one VU
                     while start.elapsed() < duration {
+                        spawn_queue += rate * (tick_ms as f64) / 1000.0;
                         // delay spawning if we can't spawn a full VU yet
                         if spawn_queue < 1.0 {
-                            spawn_queue += rate * (tick_ms as f64) / 1000.0;
                             interval.tick().await;
                             continue;
                         }
