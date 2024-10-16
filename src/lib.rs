@@ -27,7 +27,6 @@ mod requests;
 mod results;
 mod scheduler;
 mod table;
-mod tokens;
 mod writers;
 
 pub struct RunConfiguration {
