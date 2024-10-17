@@ -71,7 +71,7 @@ pub struct OpenAITextGenerationMessage {
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct OpenAITextGenerationDelta {
-    pub content: String,
+    pub content: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -187,7 +187,12 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
                             }
                         };
                     let choices = oai_response.choices;
-                    let content = choices[0].clone().delta.unwrap().content;
+                    let content = choices[0]
+                        .clone()
+                        .delta
+                        .unwrap()
+                        .content
+                        .unwrap_or("".to_string());
                     if content.is_empty() {
                         // skip empty responses
                         continue;

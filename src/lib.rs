@@ -45,7 +45,7 @@ pub struct RunConfiguration {
     pub dataset_file: String,
     pub hf_token: Option<String>,
     pub extra_metadata: Option<HashMap<String, String>>,
-    pub model_name: String
+    pub model_name: String,
 }
 
 pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyhow::Result<()> {

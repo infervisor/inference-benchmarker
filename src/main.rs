@@ -133,8 +133,8 @@ fn parse_tokenizer_options(s: &str) -> Result<TokenizeOptions, Error> {
     }
     if tokenizer_options.num_tokens.is_some()
         && (tokenizer_options.num_tokens.unwrap() == 0
-        || tokenizer_options.min_tokens == 0
-        || tokenizer_options.max_tokens == 0)
+            || tokenizer_options.min_tokens == 0
+            || tokenizer_options.max_tokens == 0)
     {
         return Err(Error::new(InvalidValue));
     }
@@ -148,7 +148,11 @@ fn parse_tokenizer_options(s: &str) -> Result<TokenizeOptions, Error> {
 async fn main() {
     let args = Args::parse();
     let git_sha = option_env!("VERGEN_GIT_SHA").unwrap_or("unknown");
-    println!("Text Generation Inference Benchmark {} ({})", env!("CARGO_PKG_VERSION"), git_sha);
+    println!(
+        "Text Generation Inference Benchmark {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        git_sha
+    );
 
     let (stop_sender, _) = broadcast::channel(1);
     // handle ctrl-c
@@ -171,7 +175,10 @@ async fn main() {
         Some(token) => Some(token),
         None => cache.token(),
     };
-    let model_name = args.model_name.clone().unwrap_or(args.tokenizer_name.clone());
+    let model_name = args
+        .model_name
+        .clone()
+        .unwrap_or(args.tokenizer_name.clone());
     let run_config = RunConfiguration {
         url: args.url.clone(),
         tokenizer_name: args.tokenizer_name.clone(),
