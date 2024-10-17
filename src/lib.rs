@@ -45,6 +45,7 @@ pub struct RunConfiguration {
     pub dataset_file: String,
     pub hf_token: Option<String>,
     pub extra_metadata: Option<HashMap<String, String>>,
+    pub model_name: String
 }
 
 pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyhow::Result<()> {
@@ -67,7 +68,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
     let backend = OpenAITextGenerationBackend::try_new(
         "".to_string(),
         run_config.url.clone(),
-        run_config.tokenizer_name.clone(),
+        run_config.model_name.clone(),
         tokenizer,
         run_config.duration,
     )?;

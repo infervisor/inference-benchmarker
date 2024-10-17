@@ -13,6 +13,11 @@ struct Args {
     /// The name of the tokenizer to use
     #[clap(short, long, env)]
     tokenizer_name: String,
+
+    /// The name of the model to use. If not provided, the same name as the tokenizer will be used.
+    #[clap(long, env)]
+    model_name: Option<String>,
+
     /// The maximum number of virtual users to use
     #[clap(default_value = "128", short, long, env)]
     max_vus: u64,
@@ -166,6 +171,7 @@ async fn main() {
         Some(token) => Some(token),
         None => cache.token(),
     };
+    let model_name = args.model_name.clone().unwrap_or(args.tokenizer_name.clone());
     let run_config = RunConfiguration {
         url: args.url.clone(),
         tokenizer_name: args.tokenizer_name.clone(),
@@ -182,6 +188,7 @@ async fn main() {
         dataset_file: args.dataset_file.clone(),
         hf_token,
         extra_metadata: args.extra_meta.clone(),
+        model_name,
     };
     let main_thread = tokio::spawn(async move {
         match run(run_config, stop_sender_clone).await {
