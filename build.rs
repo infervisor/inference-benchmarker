@@ -3,21 +3,22 @@ use vergen_gitcl::{Emitter, GitclBuilder};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Try to get the git sha from the local git repository
-    let gitcl = match GitclBuilder::all_git() {
-        Ok(gitcl) => gitcl,
+    match GitclBuilder::all_git() {
+        Ok(gitcl) => {
+            if Emitter::default()
+                .fail_on_error()
+                .add_instructions(&gitcl)?
+                .emit()
+                .is_err()
+            {
+                fallback_git_sha();
+            }
+        }
         Err(_) => {
             fallback_git_sha();
             return Ok(());
         }
     };
-    if Emitter::default()
-        .fail_on_error()
-        .add_instructions(&gitcl)?
-        .emit()
-        .is_err()
-    {
-        fallback_git_sha();
-    }
     Ok(())
 }
 
