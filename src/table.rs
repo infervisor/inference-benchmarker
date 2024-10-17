@@ -52,6 +52,7 @@ pub fn results_table(benchmark: BenchmarkReport) -> anyhow::Result<tabled::Table
         "Throughput",
         "Error Rate",
         "Successful Requests",
+        "Prompt tokens per req (avg)",
         "Decoded tokens per req (avg)",
     ]);
     let results = benchmark.get_results();
@@ -83,6 +84,7 @@ pub fn results_table(benchmark: BenchmarkReport) -> anyhow::Result<tabled::Table
                 result.total_requests()
             )
             .as_str(),
+            format!("{:.2}", result.prompt_tokens_avg()?).as_str(),
             format!(
                 "{:.2}",
                 result.total_tokens() as f64 / result.successful_requests() as f64

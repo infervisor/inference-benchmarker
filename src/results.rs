@@ -95,6 +95,22 @@ impl BenchmarkResults {
             .sum()
     }
 
+    pub fn total_prompt_tokens(&self) -> u64 {
+        self.get_successful_responses()
+            .iter()
+            .map(|response| response.num_prompt_tokens)
+            .sum()
+    }
+
+    pub fn prompt_tokens_avg(&self) -> anyhow::Result<f64> {
+        if self.is_ready() {
+            let total_prompt_tokens = self.total_prompt_tokens();
+            Ok(total_prompt_tokens as f64 / self.successful_requests() as f64)
+        } else {
+            Err(anyhow::anyhow!(NoResponses))
+        }
+    }
+
     pub fn successful_request_rate(&self) -> anyhow::Result<f64> {
         if self.is_ready() {
             let total_requests = self.successful_requests();
