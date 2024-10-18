@@ -8,5 +8,5 @@ test:
 	cargo test --package text-generation-inference-benchmark
 
 lint:
-	cargo +nightly clippy --package text-generation-inference-benchmark
 	cargo +nightly fmt
+	cargo clippy --package text-generation-inference-benchmark
