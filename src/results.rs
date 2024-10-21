@@ -14,7 +14,7 @@ pub(crate) enum BenchmarkErrors {
 impl Display for BenchmarkErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NoResponses => write!(f, "Backend did not return any valid response."),
+            NoResponses => write!(f, "Backend did not return any valid response. It is either not responding or test duration is too short."),
         }
     }
 }
