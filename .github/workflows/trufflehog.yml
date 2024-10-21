@@ -15,4 +15,4 @@ jobs:
     - name: Secret Scanning
       uses: trufflesecurity/trufflehog@main
       with:
-        extra_args: -x test_data/.*
+        extra_args: -x 'test_data/.*'
