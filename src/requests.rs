@@ -375,7 +375,7 @@ impl ConversationTextRequestGenerator {
         hf_token: Option<String>,
     ) -> anyhow::Result<Self> {
         let params = FromPretrainedParameters {
-            auth_token: hf_token,
+            token: hf_token,
             ..Default::default()
         };
         let tokenizer = match Tokenizer::from_pretrained(tokenizer, Some(params)) {

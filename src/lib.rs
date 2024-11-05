@@ -54,7 +54,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
     sysinfo::set_open_files_limit(0);
     // initialize tokenizer
     let params = FromPretrainedParameters {
-        auth_token: run_config.hf_token.clone(),
+        token: run_config.hf_token.clone(),
         ..Default::default()
     };
     let tokenizer =
