@@ -4,7 +4,7 @@ use log::{debug, error};
 use reqwest::Url;
 use std::collections::HashMap;
 use std::time::Duration;
-use text_generation_inference_benchmark::{run, RunConfiguration, TokenizeOptions};
+use inference_benchmarker::{run, RunConfiguration, TokenizeOptions};
 use tokio::sync::broadcast;
 
 #[derive(Parser, Debug)]

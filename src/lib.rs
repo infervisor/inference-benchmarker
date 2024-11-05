@@ -98,7 +98,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         env_logger::Builder::new()
             .target(env_logger::Target::Pipe(target))
             .filter(
-                Some("text_generation_inference_benchmark"),
+                Some("inference_benchmarker"),
                 LevelFilter::Debug,
             )
             .format(|buf, record| {

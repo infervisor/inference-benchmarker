@@ -59,7 +59,7 @@ spec:
                   name: {{ include "inference-benchmarker.fullname" . }}-hf-token
                   key: HF_TOKEN
             - name: RUST_LOG
-              value: "text_generation_inference_benchmark=info"
+              value: "inference_benchmarker=info"
           resources:
             {{- toYaml .Values.benchmark.resources | nindent 12 }}
           volumeMounts:
