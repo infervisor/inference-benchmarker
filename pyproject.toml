@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "text-generation-inference-benchmark"
+name = "inference-benchmarker"
 version = "0.1.0"
 description = ""
 authors = ["Hugo Larcher <hugo.larcher@huggingface.co>"]

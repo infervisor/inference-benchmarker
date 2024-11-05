@@ -34,7 +34,7 @@ def run(from_results_dir, datasource_bench, datasource_ci, github_token, github_
     
     Benchmark are run with:
     - Prompts: 200±10 tokens length (normal distribution)
-    - Generation: 200±10 tokens length (normal distribution)
+    - Generation: 800 max tokens length
     - 120s duration 
     
     Each benchmark is run using a constant arrival rate of requests per second (QPS), 
@@ -95,7 +95,7 @@ def run(from_results_dir, datasource_bench, datasource_ci, github_token, github_
         return res + [compare_table(device_ci, commit_ref, commit_compare)]
 
     def summary_table(device) -> pd.DataFrame:
-        rates = [4., 8., 16.]
+        rates = [4., 12., 20., 24.]
         data = df_bench[(df_bench['device'] == device) & (df_bench['rate'].isin(rates))]
         data = data.groupby(['model', 'rate', 'engine']).agg(
             {'inter_token_latency_ms_p90': 'mean', 'time_to_first_token_ms_p90': 'mean',
@@ -226,7 +226,7 @@ def run(from_results_dir, datasource_bench, datasource_ci, github_token, github_
                                              y_title="Time (ms)", percentiles=[0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]),
         "e2e_latency_ms": PlotConfig(title="End to End Latency (lower is better)", x_title="QPS",
                                      y_title="Time (ms)", percentiles=[0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]),
-        "token_throughput_secs": PlotConfig(title="Request Output Throughput P90 (higher is better)", x_title="QPS",
+        "token_throughput_secs": PlotConfig(title="Request Output Throughput (higher is better)", x_title="QPS",
                                             y_title="Tokens/s"),
         "successful_requests": PlotConfig(title="Successful requests (higher is better)", x_title="QPS",
                                           y_title="Count"),
@@ -257,7 +257,7 @@ def run(from_results_dir, datasource_bench, datasource_ci, github_token, github_
     percentiles = map(lambda p: f'p{int(float(p) * 100)}', percentiles)
     percentiles = sorted(list(percentiles))
     percentiles.append('avg')
-    with gr.Blocks(css=css, title="TGI benchmarks") as demo:
+    with gr.Blocks(css=css, title="Inference Benchmarker") as demo:
         with gr.Row():
             header = gr.Markdown("# TGI benchmarks\nBenchmark results for Hugging Face TGI 🤗")
         with gr.Tab(label="TGI benchmarks"):

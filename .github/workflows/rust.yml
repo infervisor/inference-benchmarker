@@ -83,5 +83,5 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('app/Cargo.lock') }}
       - name: Run unit tests
         run: |
-          cargo test --package text-generation-inference-benchmark
+          cargo test --package inference-benchmarker
 

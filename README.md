@@ -1,12 +1,14 @@
-# TGI Benchmark: A High-Performance Tool for Text Generation Model Benchmarking
+# Inference Benchmarker 🐢
+## The best tool for benchmarking inference engines and LLM performance
+
 
 Benchmarking inference servers for text generation models presents unique challenges.
-The performance of these models can vary greatly depending on factors like input prompts,
+The performance of LLM models can vary greatly depending on factors like input prompts,
 decoding strategies, hardware specifications, and server configurations.
 
-**TGI Benchmark** is designed to streamline this process by providing a comprehensive benchmarking tool
+**Inference Benchmarker** is designed to streamline this process by providing a comprehensive benchmarking tool
 that evaluates the real-world performance of text generation models and servers.
-With **TGI Benchmark**, you can easily test your model's throughput and efficiency under various workloads,
+With **Inference Benchmarker**, you can easily test your model's throughput and efficiency under various workloads,
 identify performance bottlenecks, and optimize your deployment for production environments.
 
 It can be used to benchmark any text generation server that exposes an OpenAI-compliant API.
@@ -24,7 +26,8 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
 ## Table of contents
 
 <!-- TOC -->
-* [TGI Benchmark: A High-Performance Tool for Text Generation Model Benchmarking](#tgi-benchmark-a-high-performance-tool-for-text-generation-model-benchmarking)
+* [Inference Benchmarker 🐢](#inference-benchmarker-)
+  * [The best tool for benchmarking inference engines and LLM performance](#the-best-tool-for-benchmarking-inference-engines-and-llm-performance)
   * [Features](#features)
   * [Table of contents](#table-of-contents)
   * [Get started](#get-started)
@@ -83,10 +86,10 @@ $ docker run \
     --rm \
     -it \
     --net host \
-    -v $(pwd):/opt/text-generation-inference-benchmark/results \
+    -v $(pwd):/opt/inference-benchmarker/results \
     -e "HF_TOKEN=$HF_TOKEN" \
-    ghcr.io/huggingface/text-generation-inference-benchmark:latest \
-    text-generation-inference-benchmark \
+    ghcr.io/huggingface/inference-benchmarker:latest \
+    inference-benchmarker \
     --tokenizer-name "$MODEL" \
     --max-vus 800 \
     --url http://localhost:8080 \
@@ -120,10 +123,10 @@ $ docker run \
     --rm \
     -it \
     --net host \
-    -v $(pwd):/opt/text-generation-inference-benchmark/results \
+    -v $(pwd):/opt/inference-benchmarker/results \
     -e "HF_TOKEN=$HF_TOKEN" \
-    ghcr.io/huggingface/text-generation-inference-benchmark:latest \
-    text-generation-inference-benchmark \
+    ghcr.io/huggingface/inference-benchmarker:latest \
+    inference-benchmarker \
     --tokenizer-name "meta-llama/Llama-3.1-8B-Instruct" \
     --max-vus 800 \
     --duration 120s \
@@ -202,7 +205,7 @@ You can deploy the benchmarking tool on Kubernetes using the provided Helm chart
 
 Review the values (especially model, HF token and resources), and install the chart:
 ```shell
-$ helm install tgi-benchmark ./extra/k8s/text-generation-inference-benchmark
+$ helm install inference-benchmarker ./extra/k8s/inference-benchmarker
 ```
 
 ## Deploy on Slurm

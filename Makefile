@@ -1,12 +1,12 @@
 build:
-	cargo build --release --package text-generation-inference-benchmark --bin text-generation-inference-benchmark
+	cargo build --release --package inference-benchmarker --bin inference-benchmarker
 
 run: build
-	cargo run --package text-generation-inference-benchmark --bin text-generation-inference-benchmark -- $@
+	cargo run --package inference-benchmarker --bin inference-benchmarker -- $@
 
 test:
-	cargo test --package text-generation-inference-benchmark
+	cargo test --package inference-benchmarker
 
 lint:
 	cargo +nightly fmt
-	cargo clippy --package text-generation-inference-benchmark
+	cargo clippy --package inference-benchmarker

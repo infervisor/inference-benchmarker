@@ -1,5 +1,5 @@
 [package]
-name = "text-generation-inference-benchmark"
+name = "inference-benchmarker"
 version = "0.1.0"
 edition = "2021"
 

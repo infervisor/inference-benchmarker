@@ -59,7 +59,7 @@ benchmark:
     - "--benchmark-kind"
     - "sweep"
   image:
-    repository: ghcr.io/huggingface/text-generation-inference-benchmark
+    repository: ghcr.io/huggingface/inference-benchmarker
     pullPolicy: IfNotPresent
     tag: "latest"
   podAnnotations: { }

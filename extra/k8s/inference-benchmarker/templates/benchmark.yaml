@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "text-generation-inference-benchmark.fullname" . }}-benchmark
+  name: {{ include "inference-benchmarker.fullname" . }}-benchmark
   labels:
     app.kubernetes.io/component: benchmark
-    {{- include "text-generation-inference-benchmark.labels" . | nindent 4 }}
+    {{- include "inference-benchmarker.labels" . | nindent 4 }}
 spec:
   template:
     metadata:
@@ -14,7 +14,7 @@ spec:
       {{- end }}
       labels:
         app.kubernetes.io/component: benchmark
-        {{- include "text-generation-inference-benchmark.labels" . | nindent 8 }}
+        {{- include "inference-benchmarker.labels" . | nindent 8 }}
         {{- with .Values.benchmark.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -33,8 +33,8 @@ spec:
             - sh
             - -c
             - |
-              until curl -s http://{{ include "text-generation-inference-benchmark.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080/health; do
-                echo "Waiting for  {{ include "text-generation-inference-benchmark.fullname" . }} service..."
+              until curl -s http://{{ include "inference-benchmarker.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080/health; do
+                echo "Waiting for  {{ include "inference-benchmarker.fullname" . }} service..."
                 sleep 1
               done
               exit 0
@@ -45,9 +45,9 @@ spec:
           image: "{{ .Values.benchmark.image.repository }}:{{ .Values.benchmark.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.benchmark.image.pullPolicy }}
           args:
-            - "text-generation-inference-benchmark"
+            - "inference-benchmarker"
             - "--url"
-            - "http://{{ include "text-generation-inference-benchmark.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
+            - "http://{{ include "inference-benchmarker.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080"
             - "--tokenizer-name"
             - "{{ .Values.model_id }}"
             - "--no-console"
@@ -56,7 +56,7 @@ spec:
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "text-generation-inference-benchmark.fullname" . }}-hf-token
+                  name: {{ include "inference-benchmarker.fullname" . }}-hf-token
                   key: HF_TOKEN
             - name: RUST_LOG
               value: "text_generation_inference_benchmark=info"
@@ -64,7 +64,7 @@ spec:
             {{- toYaml .Values.benchmark.resources | nindent 12 }}
           volumeMounts:
             - name: results
-              mountPath: /opt/text-generation-inference-benchmark/results
+              mountPath: /opt/inference-benchmarker/results
         - name: nginx
           image: nginx
           ports:
@@ -83,7 +83,7 @@ spec:
           emptyDir: { }
         - name: default
           configMap:
-              name: {{ include "text-generation-inference-benchmark.fullname" . }}-nginx-config
+              name: {{ include "inference-benchmarker.fullname" . }}-nginx-config
       {{- with .Values.benchmark.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

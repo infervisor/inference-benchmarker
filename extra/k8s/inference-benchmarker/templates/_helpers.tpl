@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "text-generation-inference-benchmark.name" -}}
+{{- define "inference-benchmarker.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "text-generation-inference-benchmark.fullname" -}}
+{{- define "inference-benchmarker.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "text-generation-inference-benchmark.chart" -}}
+{{- define "inference-benchmarker.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "text-generation-inference-benchmark.labels" -}}
-helm.sh/chart: {{ include "text-generation-inference-benchmark.chart" . }}
-{{ include "text-generation-inference-benchmark.selectorLabels" . }}
+{{- define "inference-benchmarker.labels" -}}
+helm.sh/chart: {{ include "inference-benchmarker.chart" . }}
+{{ include "inference-benchmarker.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "text-generation-inference-benchmark.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "text-generation-inference-benchmark.name" . }}
+{{- define "inference-benchmarker.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "inference-benchmarker.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "text-generation-inference-benchmark.serviceAccountName" -}}
+{{- define "inference-benchmarker.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "text-generation-inference-benchmark.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "inference-benchmarker.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
