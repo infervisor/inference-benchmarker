@@ -1,4 +1,4 @@
-# Inference Benchmarker 🐢
+# Inference Benchmarker
 ## The best tool for benchmarking inference engines and LLM performance
 
 
@@ -26,7 +26,7 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
 ## Table of contents
 
 <!-- TOC -->
-* [Inference Benchmarker 🐢](#inference-benchmarker-)
+* [Inference Benchmarker](#inference-benchmarker)
   * [The best tool for benchmarking inference engines and LLM performance](#the-best-tool-for-benchmarking-inference-engines-and-llm-performance)
   * [Features](#features)
   * [Table of contents](#table-of-contents)
@@ -220,11 +220,9 @@ Considering that JSON results are in `/path/to/results/dir`:
 $ poetry install
 $ cd extra/dashboard
 $ poetry run python app.py --from-results-dir /path/to/results/dir
-
-
-
-
 ```
+
+![dashboard.png](assets/dashboard.png)
 
 ## Development
 
