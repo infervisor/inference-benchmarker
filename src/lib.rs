@@ -97,10 +97,7 @@ pub async fn run(run_config: RunConfiguration, stop_sender: Sender<()>) -> anyho
         let target = Box::new(File::create("log.txt").expect("Can't create file"));
         env_logger::Builder::new()
             .target(env_logger::Target::Pipe(target))
-            .filter(
-                Some("inference_benchmarker"),
-                LevelFilter::Debug,
-            )
+            .filter(Some("inference_benchmarker"), LevelFilter::Debug)
             .format(|buf, record| {
                 writeln!(
                     buf,
