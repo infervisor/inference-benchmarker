@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-and-push:
     runs-on:
-      group: aws-general-8-plus-priv
+      group: aws-general-8-plus
     permissions:
       packages: write
       contents: read
@@ -37,12 +37,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Login to internal Container Registry
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-          registry: registry.internal.huggingface.tech
       # If pull request
       - name: Extract metadata (tags, labels) for Docker
         if: ${{ github.event_name == 'pull_request' }}
@@ -62,7 +56,6 @@ jobs:
           flavor: |
             latest=auto
           images: |
-            registry.internal.huggingface.tech/api-inference/inference-benchmarker
             ghcr.io/huggingface/inference-benchmarker
           tags: |
             type=semver,pattern={{version}}${{ env.LABEL }}
