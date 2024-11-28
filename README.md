@@ -43,7 +43,6 @@ It can be used to benchmark any text generation server that exposes an OpenAI-co
   * [Visualize the results](#visualize-the-results)
   * [Development](#development)
   * [Frequently Asked Questions](#frequently-asked-questions)
-  * [TODO](#todo)
 <!-- TOC -->
 
 ## Get started
@@ -265,11 +264,3 @@ $ make build
   There is currently no way to guarantee a fixed number of tokens generated without modifying the inference server.
   So you may have `(successful requests) * max_tokens < generated tokens`.
 
-## TODO
-
-- [X] Customizable token count and variance
-- [X] Check results
-- [X] Allow for system prompts for prefix caching
-- [ ] Allow for multi-turn prompts
-- [X] Script to generate plots from results
-- [X] Add support for multiple tokens in stream chunks (when speculation is active)

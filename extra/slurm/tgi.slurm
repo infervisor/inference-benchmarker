@@ -20,11 +20,12 @@ fi
 
 echo "Starting TGI benchmark for $MODEL"
 export RUST_BACKTRACE=full
-export RUST_LOG=text_generation_inference_benchmark=info
+export RUST_LOG=inference_benchmarker=info
 
 # set a random available port to avoid conflicts
 PORT=$(shuf -i 8000-9999 -n 1)
 export PORT
+export PREFILL_CHUNKING=1
 
 echo "Model will run on ${SLURM_JOB_NODELIST_HET_GROUP_0}:${PORT}"
 echo "Benchmark will run on ${SLURM_JOB_NODELIST_HET_GROUP_1}"
@@ -40,9 +41,9 @@ srun --het-group=0 \
      --no-container-mount-home \
      /usr/local/bin/text-generation-launcher \
       --model-id $MODEL \
-      --max-concurrent-requests 512 \
-      --max-waiting-tokens 5 \
-      --cuda-graphs="1,8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128"&
+      --max-concurrent-requests 1024 \
+      --max-waiting-tokens 0 \
+      --max-batch-prefill-tokens 512&
 
 # wait until /health is available, die after 5 minutes
 timeout 600 bash -c "while [[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${PORT}/health)\" != \"200\" ]]; do sleep 1 && echo \"Waiting for TGI to start...\"; done" || exit 1
@@ -58,20 +59,21 @@ if [[ $exit_code != 124 ]]; then
     srun --het-group=1 \
          -u \
          -n 1 \
-         --container-image="ghcr.io#huggingface/text-generation-inference-benchmark:latest" \
-         --container-mounts="${RESULTS_DIR}:/opt/text-generation-inference-benchmark/results" \
+         --container-image="ghcr.io#huggingface/inference-benchmarker:latest" \
+         --container-mounts="${RESULTS_DIR}:/opt/inference-benchmarker/results" \
          --no-container-mount-home \
-         text-generation-inference-benchmark \
+         inference-benchmarker \
              --tokenizer-name "$MODEL" \
              --max-vus 800 \
              --url "http://${SLURM_JOB_NODELIST_HET_GROUP_0}:${PORT}" \
              --duration 120s \
              --warmup 30s \
              --benchmark-kind rate \
-             --rates 0.8 --rates 1.6 --rates 2.4 --rates 3.2 --rates 4.0 --rates 4.8 --rates 5.6 --rates 6.4 --rates 7.2 --rates 8.0 --rates 8.8 --rates 9.6 --rates 10.4 --rates 11.2 --rates 12.0 --rates 12.8 --rates 13.6 --rates 14.4 --rates 15.2 --rates 16.0 --rates 16.8 --rates 17.6 --rates 18.4 --rates 19.2 --rates 20.0 --rates 20.8 --rates 21.6 --rates 22.4 --rates 23.2 --rates 24.0 \
+             --rates 0.8 --rates 2.4 --rates 4.0 --rates 5.6 --rates 7.2 --rates 8.8 --rates 10.4 --rates 12.0 --rates 13.6 --rates 15.2 --rates 16.8 --rates 18.4 --rates 20.0 --rates 21.6 --rates 23.2 --rates 24.0 \
+             --extra-meta "version=$VERSION,engine=TGI,tp=$TP,max_batch_prefill_tokens=512" \
              --prompt-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
-             --decode-options "num_tokens=200,max_tokens=220,min_tokens=180,variance=10" \
-             --extra-meta "version=$VERSION,engine=TGI,tp=$TP" \
+             --decode-options "num_tokens=800,max_tokens=800,min_tokens=800,variance=0" \
+             --dataset-file share_gpt_cleaned.json \
              --no-console
 fi
 
