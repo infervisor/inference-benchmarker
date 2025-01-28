@@ -106,8 +106,12 @@ impl OpenAITextGenerationBackend {
         tokenizer: Arc<Tokenizer>,
         timeout: time::Duration,
     ) -> anyhow::Result<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|e| anyhow::anyhow!("Error creating HTTP client: {e}"))?;
         Ok(Self {
-            client: reqwest::Client::new(),
+            client,
             api_key,
             base_url,
             model_name,
