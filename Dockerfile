@@ -7,6 +7,7 @@ WORKDIR /usr/src/inference-benchmarker
 COPY . .
 RUN cargo install --path .
 FROM debian:bullseye-slim
+RUN apt update && apt install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/inference-benchmarker/results
 WORKDIR /opt/inference-benchmarker
 COPY --from=builder /usr/local/cargo/bin/inference-benchmarker /usr/local/bin/inference-benchmarker
