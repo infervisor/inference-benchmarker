@@ -197,16 +197,15 @@ impl Benchmark {
                             id: id.clone(),
                             progress,
                         };
-                        let _ = event_bus
-                            .send(Event::BenchmarkProgress(BenchmarkEvent {
-                                id: progress_evt.id,
-                                scheduler_type: ExecutorType::ConstantVUs,
-                                request_throughput: Some(progress_evt.progress.requests_throughput),
-                                progress: progress_evt.progress.progress,
-                                successful_requests: progress_evt.progress.successful_requests,
-                                failed_requests: progress_evt.progress.failed_requests,
-                                results: None,
-                            }));
+                        let _ = event_bus.send(Event::BenchmarkProgress(BenchmarkEvent {
+                            id: progress_evt.id,
+                            scheduler_type: ExecutorType::ConstantVUs,
+                            request_throughput: Some(progress_evt.progress.requests_throughput),
+                            progress: progress_evt.progress.progress,
+                            successful_requests: progress_evt.progress.successful_requests,
+                            failed_requests: progress_evt.progress.failed_requests,
+                            results: None,
+                        }));
                     }
                 }
             }
