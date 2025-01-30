@@ -1,5 +1,5 @@
 use clap::error::ErrorKind::InvalidValue;
-use clap::{Error, Parser};
+use clap::{ArgGroup, Error, Parser};
 use inference_benchmarker::{run, RunConfiguration, TokenizeOptions};
 use log::{debug, error};
 use reqwest::Url;
@@ -8,7 +8,8 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version, about, long_about = None, group(ArgGroup::new("group_profile").multiple(true)),group(ArgGroup::new("group_manual").multiple(true).conflicts_with("group_profile"))
+)]
 struct Args {
     /// The name of the tokenizer to use
     #[clap(short, long, env)]
@@ -19,24 +20,10 @@ struct Args {
     model_name: Option<String>,
 
     /// The maximum number of virtual users to use
-    #[clap(
-        default_value = "128",
-        short,
-        long,
-        env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
-    )]
+    #[clap(default_value = "128", short, long, env, group = "group_manual")]
     max_vus: u64,
     /// The duration of each benchmark step
-    #[clap(
-        default_value = "120s",
-        short,
-        long,
-        env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
-    )]
+    #[clap(default_value = "120s", short, long, env, group = "group_manual")]
     #[arg(value_parser = parse_duration)]
     duration: Duration,
     /// A list of rates of requests to send per second (only valid for the ConstantArrivalRate benchmark).
@@ -47,27 +34,13 @@ struct Args {
     #[clap(default_value = "10", long, env)]
     num_rates: u64,
     /// A benchmark profile to use
-    #[clap(long, env, group = "group_profile", conflicts_with = "group_manual")]
+    #[clap(long, env, group = "group_profile")]
     profile: Option<String>,
     /// The kind of benchmark to run (throughput, sweep, optimum)
-    #[clap(
-        default_value = "sweep",
-        short,
-        long,
-        env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
-    )]
+    #[clap(default_value = "sweep", short, long, env, group = "group_manual")]
     benchmark_kind: String,
     /// The duration of the prewarm step ran before the benchmark to warm up the backend (JIT, caches, etc.)
-    #[clap(
-        default_value = "30s",
-        short,
-        long,
-        env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
-    )]
+    #[clap(default_value = "30s", short, long, env, group = "group_manual")]
     #[arg(value_parser = parse_duration)]
     warmup: Duration,
     /// The URL of the backend to benchmark. Must be compatible with OpenAI Message API
@@ -91,8 +64,7 @@ struct Args {
         long,
         env,
         value_parser(parse_tokenizer_options),
-        group = "group_manual",
-        conflicts_with = "group_profile"
+        group = "group_manual"
     )]
     prompt_options: Option<TokenizeOptions>,
     /// Constraints for the generated text.
@@ -108,8 +80,7 @@ struct Args {
         long,
         env,
         value_parser(parse_tokenizer_options),
-        group = "group_manual",
-        conflicts_with = "group_profile"
+        group = "group_manual"
     )]
     decode_options: Option<TokenizeOptions>,
     /// Hugging Face dataset to use for prompt generation
@@ -117,8 +88,7 @@ struct Args {
         default_value = "hlarcher/share_gpt_small",
         long,
         env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
+        group = "group_manual"
     )]
     dataset: String,
     /// File to use in the Dataset
@@ -126,8 +96,7 @@ struct Args {
         default_value = "share_gpt_filtered_small.json",
         long,
         env,
-        group = "group_manual",
-        conflicts_with = "group_profile"
+        group = "group_manual"
     )]
     dataset_file: String,
     /// Extra metadata to include in the benchmark results file, comma-separated key-value pairs.
