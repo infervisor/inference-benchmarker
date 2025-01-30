@@ -85,7 +85,7 @@ struct Args {
     decode_options: Option<TokenizeOptions>,
     /// Hugging Face dataset to use for prompt generation
     #[clap(
-        default_value = "hlarcher/share_gpt_small",
+        default_value = "hlarcher/inference-benchmarker",
         long,
         env,
         group = "group_manual"
