@@ -67,16 +67,17 @@ jobs:
             PLATFORM=${{ env.PLATFORM }}
           tags: ${{ steps.meta.outputs.tags || steps.meta-pr.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels || steps.meta-pr.outputs.labels }}
-      - name: Extract binary from Docker
+      - name: Extract binary from Docker and tar.gz
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           docker create --name extract ghcr.io/huggingface/inference-benchmarker:sha-${{ env.GITHUB_SHA_SHORT }}
           docker cp extract:/usr/local/bin/inference-benchmarker ${{ github.workspace }}/inference-benchmarker
           docker rm -f extract
+          tar -czf ${{ github.workspace }}/inference-benchmarker_x86_64.tar.gz -C ${{ github.workspace }} inference-benchmarker
       - name: Upload binary
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
-          name: inference-benchmarker_x86_64
+          name: inference-benchmarker_x86_64.tar.gz
           path: ${{ github.workspace }}/inference-benchmarker
 
