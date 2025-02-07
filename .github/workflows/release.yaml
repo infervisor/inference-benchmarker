@@ -1,0 +1,46 @@
+name: Create Github release
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: write
+
+on:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-build
+  cancel-in-progress: true
+jobs:
+  build:
+    permissions:
+      packages: write
+      contents: read
+    name: Build and push docker image
+    uses: ./.github/workflows/build.yaml
+
+  release:
+    name: Create Github release
+    runs-on:
+      group: cpu-low
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      released: ${{ steps.release.outputs.released }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: {{ github.workspace }}/dist
+
+      - name: Release
+        id: release
+        uses: huggingface/semver-release-action@19aa026e54ea22bd69f375f8debad1bb58cf2017
+        with:
+          githubPluginOpts: "{\"assets\": [\"dist/*\"]}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
