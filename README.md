@@ -60,7 +60,7 @@ MODEL=meta-llama/Llama-3.1-8B-Instruct
 HF_TOKEN=<your HF READ token>
 
 docker run --gpus all --shm-size 1g -p 8080:80 -e "HF_TOKEN=$HF_TOKEN" \
-    ghcr.io/huggingface/text-generation-inference:2.3.1 --model-id $MODEL
+    ghcr.io/huggingface/text-generation-inference:3.2.1 --model-id $MODEL
 ```
 
 **vLLM**
@@ -230,7 +230,7 @@ Slurm example is provided in `extra/slurm`.
 ## Visualize the results
 
 You can use the provided Gradio app to quickly visualize the results.
-Considering that JSON results are in `/path/to/results/dir`:
+Considering that JSON results files are in `/path/to/results/dir`:
 ```shell
 $ poetry install
 $ cd extra/dashboard
