@@ -1,12 +1,10 @@
-import os
 from contextlib import ExitStack
 from dataclasses import dataclass
-from typing import Tuple, List
+from typing import List
 
 import click
 import gradio as gr
 import pandas as pd
-from github import Github, Auth
 
 from parse_results import build_results
 
@@ -69,7 +67,7 @@ def run(from_results_dir, datasource, port):
         return res + [summary_table()]
 
     def summary_table() -> pd.DataFrame:
-        data = df_bench.groupby(['model', 'run_id','rate']).agg(
+        data = df_bench.groupby(['model', 'run_id', 'rate']).agg(
             {'inter_token_latency_ms_p90': 'mean', 'time_to_first_token_ms_p90': 'mean',
              'e2e_latency_ms_p90': 'mean', 'token_throughput_secs': 'mean',
              'successful_requests': 'mean', 'error_rate': 'mean'}).reset_index()
@@ -196,7 +194,7 @@ def run(from_results_dir, datasource, port):
         demo.load(load_demo, [model, percentiles_bench],
                   [item["component"] for item in line_plots_bench] + [table])
 
-    demo.launch(server_port=port)
+    demo.launch(server_port=port, server_name="0.0.0.0")
 
 
 @click.command()
