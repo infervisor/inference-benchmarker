@@ -6,6 +6,7 @@ use log::{debug, error, info, trace, warn};
 use rand_distr::Distribution;
 use rayon::iter::split;
 use rayon::prelude::*;
+use reqwest::Url;
 use reqwest_eventsource::{Error, Event, EventSource};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -58,7 +59,7 @@ impl Clone for Box<dyn TextGenerationBackend + Send + Sync> {
 #[derive(Debug, Clone)]
 pub struct OpenAITextGenerationBackend {
     pub api_key: String,
-    pub base_url: String,
+    pub base_url: Url,
     pub model_name: String,
     pub client: reqwest::Client,
     pub tokenizer: Arc<Tokenizer>,
@@ -101,7 +102,7 @@ pub struct OpenAITextGenerationRequest {
 impl OpenAITextGenerationBackend {
     pub fn try_new(
         api_key: String,
-        base_url: String,
+        base_url: Url,
         model_name: String,
         tokenizer: Arc<Tokenizer>,
         timeout: time::Duration,
@@ -128,7 +129,9 @@ impl TextGenerationBackend for OpenAITextGenerationBackend {
         request: Arc<TextGenerationRequest>,
         sender: Sender<TextGenerationAggregatedResponse>,
     ) {
-        let url = format!("{base_url}/v1/chat/completions", base_url = self.base_url);
+        let mut url = self.base_url.clone();
+        url.set_path("/v1/chat/completions");
+        // let url = format!("{base_url}", base_url = self.base_url);
         let mut aggregated_response = TextGenerationAggregatedResponse::new(request.clone());
         let messages = vec![OpenAITextGenerationMessage {
             role: "user".to_string(),
@@ -829,7 +832,7 @@ mod tests {
                 w.write_all(b"data: [DONE]\n\n")
             })
             .create_async().await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
@@ -890,7 +893,7 @@ mod tests {
                 w.write_all(b"data: [DONE]\n\n")
             })
             .create_async().await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
@@ -975,7 +978,7 @@ mod tests {
             .with_chunked_body(|w| w.write_all(b"data: {\"error\": \"Internal server error\"}\n\n"))
             .create_async()
             .await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
@@ -1021,7 +1024,7 @@ mod tests {
             .with_chunked_body(|w| w.write_all(b"this is wrong\n\n"))
             .create_async()
             .await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
@@ -1067,7 +1070,7 @@ mod tests {
             .with_chunked_body(|w| w.write_all(b"data: {\"foo\": \"bar\"}\n\n"))
             .create_async()
             .await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
@@ -1117,7 +1120,7 @@ mod tests {
                 w.write_all(b"data: [DONE]\n\n")
             })
             .create_async().await;
-        let url = s.url();
+        let url = s.url().parse().unwrap();
         let tokenizer = Arc::new(Tokenizer::from_pretrained("gpt2", None).unwrap());
         let backend = OpenAITextGenerationBackend::try_new(
             "".to_string(),
