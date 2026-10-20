@@ -18,6 +18,8 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 const THROUGHPUT_BUDGET: f64 = 1.2; // sweep up to 120% of max throughput
 /// Request timeout of runs without a duration (`Once`, `Replay`).
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+/// Length of a soak window when none is set.
+pub const DEFAULT_SOAK_WINDOW: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Debug, Default, PartialEq, strum_macros::Display, Serialize, Deserialize)]
 pub enum BenchmarkKind {
@@ -33,6 +35,9 @@ pub enum BenchmarkKind {
     Once,
     /// Recorded traffic, each request at its recorded offset divided by `replay_speed`.
     Replay,
+    /// Constant concurrency (`max_vus`) for `duration`, reported in windows of
+    /// `soak_window` so a slow decline shows (see [`crate::soak`]).
+    Soak,
 }
 
 pub struct MessageEvent {
@@ -137,6 +142,14 @@ pub struct BenchmarkConfig {
     pub slo: Option<Slo>,
     #[serde(default)]
     pub gpu_cost: Option<GpuCost>,
+    /// `Soak` only: the length of one reported window (default 5 minutes).
+    #[serde(default, rename = "soak_window_secs")]
+    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
+    pub soak_window: Option<Duration>,
+    /// `Soak` only: how much worse the last windows may be than the first ones,
+    /// as a fraction (default 0.2).
+    #[serde(default)]
+    pub soak_tolerance: Option<f64>,
 }
 
 impl Default for BenchmarkConfig {
@@ -159,6 +172,8 @@ impl Default for BenchmarkConfig {
             request_timeout: None,
             slo: None,
             gpu_cost: None,
+            soak_window: None,
+            soak_tolerance: None,
         }
     }
 }
@@ -195,6 +210,20 @@ impl BenchmarkConfig {
                 }
             }
         }
+        if self.benchmark_kind == BenchmarkKind::Soak {
+            let window = self.soak_window();
+            if window < Duration::from_secs(1) || window > self.duration {
+                return Err(anyhow::anyhow!(
+                    "soak_window must be between 1 second and the duration"
+                ));
+            }
+            if self
+                .soak_tolerance
+                .is_some_and(|t| !t.is_finite() || t <= 0.0)
+            {
+                return Err(anyhow::anyhow!("soak_tolerance must be greater than 0"));
+            }
+        }
         if !self.replay_speed.is_finite() || self.replay_speed < 0.0 {
             return Err(anyhow::anyhow!("replay_speed must be 0 or more"));
         }
@@ -208,11 +237,19 @@ impl BenchmarkConfig {
     }
 
     pub fn request_timeout(&self) -> Duration {
-        self.request_timeout.unwrap_or(if self.duration.is_zero() {
-            DEFAULT_REQUEST_TIMEOUT
-        } else {
-            self.duration
-        })
+        self.request_timeout.unwrap_or(
+            if self.duration.is_zero() || self.benchmark_kind == BenchmarkKind::Soak {
+                DEFAULT_REQUEST_TIMEOUT
+            } else {
+                self.duration
+            },
+        )
+    }
+
+    /// The length of one soak window.
+    pub fn soak_window(&self) -> Duration {
+        self.soak_window
+            .unwrap_or(DEFAULT_SOAK_WINDOW.min(self.duration))
     }
 }
 
@@ -284,6 +321,9 @@ impl Benchmark {
             BenchmarkKind::Replay => {
                 let speed = self.config.replay_speed;
                 self.run_scheduled("replay", Some(speed)).await?;
+            }
+            BenchmarkKind::Soak => {
+                self.run_soak().await?;
             }
         }
         self.end_time = Some(tokio::time::Instant::now());
@@ -427,6 +467,29 @@ impl Benchmark {
             .await
     }
 
+    /// Hold `max_vus` for `duration`, one step per window: `soak-001`, `soak-002`, …
+    /// The last window is shorter when the duration is not a whole number of them.
+    pub async fn run_soak(&mut self) -> anyhow::Result<()> {
+        let window = self.config.soak_window();
+        let mut left = self.config.duration;
+        let mut n = 0;
+        info!("Running soak benchmark in windows of {window:?}");
+        while !left.is_zero() {
+            n += 1;
+            let length = window.min(left);
+            left -= length;
+            let config = ExecutorConfig {
+                max_vus: self.config.max_vus,
+                duration: length,
+                rate: None,
+            };
+            let id = format!("{}{n:03}", crate::soak::WINDOW_PREFIX);
+            self.run_step(&id, ExecutorType::ConstantVUs, config, None)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn run_sweep(&mut self) -> anyhow::Result<()> {
         // run a throughput benchmark to retrieve the maximum throughput of server
         let throughput_results = self.run_throughput().await?;
@@ -560,5 +623,74 @@ mod tests {
                 allowed_error_ms * 10
             );
         }
+    }
+
+    fn soak_config(duration: u64, window: Option<u64>) -> BenchmarkConfig {
+        BenchmarkConfig {
+            max_vus: 2,
+            duration: Duration::from_secs(duration),
+            benchmark_kind: BenchmarkKind::Soak,
+            soak_window: window.map(Duration::from_secs),
+            tokenizer: "gpt2".to_string(),
+            model_name: "gpt2".to_string(),
+            run_id: "soak".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn soak_windows_are_validated() {
+        assert!(soak_config(10, Some(2)).validate().is_ok());
+        assert!(
+            soak_config(10, None).validate().is_ok(),
+            "the window defaults to 5 minutes, capped by the duration"
+        );
+        assert_eq!(soak_config(10, None).soak_window(), Duration::from_secs(10));
+        assert_eq!(soak_config(3600, None).soak_window(), DEFAULT_SOAK_WINDOW);
+        assert!(soak_config(10, Some(0)).validate().is_err());
+        assert!(
+            soak_config(10, Some(11)).validate().is_err(),
+            "a window longer than the run"
+        );
+        let mut c = soak_config(10, Some(2));
+        c.soak_tolerance = Some(0.0);
+        assert!(c.validate().is_err());
+        // a long soak does not time requests out after the whole duration
+        assert_eq!(
+            soak_config(86_400, Some(300)).request_timeout(),
+            DEFAULT_REQUEST_TIMEOUT
+        );
+    }
+
+    #[tokio::test]
+    async fn soak_reports_one_step_per_window_and_a_summary() {
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (stop_sender, _) = tokio::sync::broadcast::channel(1);
+        let backend = Box::new(DummyTextGenerationBackend::new(Duration::from_millis(200)));
+        let mut benchmark = Benchmark::new(
+            soak_config(5, Some(2)),
+            backend,
+            Arc::from(Mutex::from(DummyTextRequestGenerator::new())),
+            event_tx,
+            stop_sender,
+        );
+        let report = benchmark.run().await.unwrap();
+        let ids: Vec<String> = report.get_results().iter().map(|r| r.id.clone()).collect();
+        assert_eq!(
+            ids,
+            ["soak-001", "soak-002", "soak-003"],
+            "5 s in windows of 2 s ends with a 1 s window"
+        );
+        let writer =
+            crate::writers::BenchmarkReportWriter::try_new(benchmark.config.clone(), report)
+                .unwrap();
+        let soak = writer.soak.expect("a soak run carries its summary");
+        assert_eq!(soak.windows, 3);
+        assert_eq!(
+            soak.verdict,
+            crate::soak::SoakVerdict::Stable,
+            "{:?}",
+            soak.reasons
+        );
     }
 }

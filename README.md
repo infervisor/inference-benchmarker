@@ -247,6 +247,30 @@ let report = run_benchmark(config, target, Workload::Requests(requests), tokeniz
 - `report` is the same `BenchmarkReportWriter` the CLI writes as JSON; it serializes and deserializes.
 - Fire `stop` to cancel: the error downcasts to `Cancelled`, which holds the steps that finished.
 
+### Soak tests
+
+`BenchmarkKind::Soak` holds `max_vus` users for `duration` (up to hours) and reports it in equal
+windows (`soak_window`, 5 minutes by default): steps `soak-001`, `soak-002`, …. The report's `soak`
+field says whether the server held up: `soak::analyze` compares the first third of the windows with
+the last third (slowest 5% of total time, first output and time between outputs; requests per second;
+failed requests). Worse than `soak_tolerance` (20% by default; failures may grow by one point) is
+`degrading`; fewer than three windows is `too_short`.
+
+### Run from a spec file
+
+A whole run can be a file, which is how it runs as a batch job next to the server:
+
+```sh
+BENCH_API_KEY=... inference-benchmarker-run --spec spec.json --out results/
+```
+
+`spec.json` is a `spec::JobSpec`: the `BenchmarkConfig`, the server `url` and `model`, and the workload
+(`{"kind": "synthetic"}`, `{"kind": "requests", "requests": [...]}` or `{"kind": "conversations", ...}`).
+The API key is never in the spec: it comes from `BENCH_API_KEY` (and `HF_TOKEN` for a gated tokenizer).
+The run writes `report.json`, `trace.jsonl` and `result.json` (`completed`, `cancelled` or `failed`,
+with the first failed request's reason). SIGINT and SIGTERM stop it and keep the steps that finished.
+The same thing is available as `spec::run_spec` for library callers.
+
 ## Deploy on Kubernetes
 
 You can deploy the benchmarking tool on Kubernetes using the provided Helm chart.
