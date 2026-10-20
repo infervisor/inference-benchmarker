@@ -2,7 +2,8 @@ use crate::cost::{CostResult, GpuCost};
 use crate::requests::ErrorKind;
 use crate::results::{AccuracyResult, BenchmarkReport, BenchmarkResults};
 use crate::slo::{Slo, SloResult};
-use crate::{executors, BenchmarkConfig};
+use crate::soak::{self, SoakSummary};
+use crate::{executors, BenchmarkConfig, BenchmarkKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -172,6 +173,9 @@ pub struct BenchmarkReportWriter {
     pub start_time: String,
     pub end_time: String,
     pub system: SystemInfo,
+    /// A soak run: whether the server held up over time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soak: Option<SoakSummary>,
     #[serde(skip)]
     report: BenchmarkReport,
 }
@@ -187,9 +191,16 @@ impl BenchmarkReportWriter {
                 BenchmarkResultsWriter::new(result, config.slo.as_ref(), config.gpu_cost.as_ref())?;
             results.push(writer);
         }
+        let soak = (config.benchmark_kind == BenchmarkKind::Soak).then(|| {
+            soak::analyze(
+                &results,
+                config.soak_tolerance.unwrap_or(soak::DEFAULT_TOLERANCE),
+            )
+        });
         Ok(BenchmarkReportWriter {
             config,
             results,
+            soak,
             start_time: report
                 .start_time()
                 .ok_or(anyhow::anyhow!("start_time not set"))?

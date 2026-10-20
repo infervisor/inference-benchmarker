@@ -9,6 +9,8 @@ pub mod cost;
 pub mod hub;
 pub mod record;
 pub mod slo;
+pub mod soak;
+pub mod spec;
 
 mod api;
 mod benchmark;

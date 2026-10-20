@@ -74,6 +74,7 @@ pub async fn run(mut run_config: RunConfiguration, stop_sender: Sender<()>) -> a
             "throughput" => BenchmarkKind::Throughput,
             "sweep" => BenchmarkKind::Sweep,
             "rate" => BenchmarkKind::Rate,
+            "soak" => BenchmarkKind::Soak,
             other => return Err(anyhow::anyhow!("Unknown benchmark kind: {other}")),
         },
         warmup_duration: run_config.warmup_duration,

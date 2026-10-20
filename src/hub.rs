@@ -144,6 +144,29 @@ pub async fn load_tokenizer(
     tokenizer_from_bytes(&bytes)
 }
 
+/// A tokenizer to count tokens with when a model's repository has none.
+/// Counts are then approximate, and the server's own counts win whenever it
+/// reports usage.
+pub const FALLBACK_TOKENIZER: &str = "openai-community/gpt2";
+
+/// [`load_tokenizer`], falling back to [`FALLBACK_TOKENIZER`] when `repo` has
+/// no usable `tokenizer.json`. Returns the tokenizer and the repo it came from.
+pub async fn load_tokenizer_or_fallback(
+    repo: &str,
+    token: Option<&str>,
+    cache_dir: Option<&Path>,
+) -> anyhow::Result<(Tokenizer, String)> {
+    match load_tokenizer(repo, token, cache_dir).await {
+        Ok(t) => Ok((t, repo.to_string())),
+        Err(e) if repo != FALLBACK_TOKENIZER => {
+            log::warn!("tokenizer {repo} unavailable, counting with {FALLBACK_TOKENIZER}: {e}");
+            let t = load_tokenizer(FALLBACK_TOKENIZER, None, cache_dir).await?;
+            Ok((t, FALLBACK_TOKENIZER.to_string()))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
